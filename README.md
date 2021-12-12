@@ -57,6 +57,8 @@ You can set the camera parameters in the `cam.options` class. See the `libcamera
 
 Capture the image using the `cam.captureFrame(cv::Mat &frame)` function.
 
+Check the `examples/takephoto.cpp` file for a full working example.
+
 License
 -------
 
