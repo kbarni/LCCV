@@ -3,6 +3,14 @@ LibCamera bindings for OpenCV
 
 LCCV (*LibCamera bindings for OpenCV*) is a small wrapper library that provides access to the Raspberry Pi camera in OpenCV.
 
+### IMPORTANT WARNING: 
+
+***This is a very early version, so expect to have several bugs.***
+
+***Note that the API still might have some changes!***
+
+***Please help with the development by reporting the bugs and issues you encounter, committing bugfixes, and proposing ideas!***
+
 Context
 -------
 
@@ -21,23 +29,23 @@ LCCV is heavily based on Raspbian's `libcamera-apps` source code. It is aimed to
 
 This first version gives access to the high resolution photo mode; continuous acquisition (video mode) will follow soon.
 
-This is a very early version, so expect to have some bugs.
-
 Prerequisites
 -------------
 
 - Raspbian Bullseye
+- Development libraries (gcc/clang, cmake, git)
 - libcamera (with development packages)
 - OpenCV (with development packages)
-- cmake
+
+Install everything using the following command:
 
     sudo apt install build-essential cmake git libcamera-dev libopencv-dev
 
 Building and installing
 -----------------------
 
-	git clone https://github.com/kbarni/LCCV.git
-	cd LCCV
+    git clone https://github.com/kbarni/LCCV.git
+    cd LCCV
     mkdir build
     cd build
     cmake ..
@@ -47,17 +55,9 @@ Building and installing
 Using the library
 -----------------
 
-### Still image capture
+Please refer to the [wiki](https://github.com/kbarni/LCCV/wiki)
 
-First declare the camera:
-
-    lccv::PiCamera cam;
-    
-You can set the camera parameters in the `cam.options` class. See the `libcamera_app_options.hpp` file for the list of the available parameters.
-
-Capture the image using the `cam.captureFrame(cv::Mat &frame)` function.
-
-Check the `examples/takephoto.cpp` file for a full working example.
+Also see some example code in the `examples` folder.
 
 License
 -------
