@@ -543,7 +543,6 @@ void LibcameraApp::setupCapture()
 
 		if (allocator_->allocate(stream) < 0)
 			throw std::runtime_error("failed to allocate capture buffers");
-
 		for (const std::unique_ptr<FrameBuffer> &buffer : allocator_->buffers(stream))
 		{
 			// "Single plane" buffers appear as multi-plane here, but we can spot them because then

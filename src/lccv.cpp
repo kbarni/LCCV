@@ -48,12 +48,12 @@ void PiCamera::getVideoFrame(cv::Mat &frame, CompletedRequestPtr &payload)
     libcamera::Stream *stream = app->VideoStream();
 	app->StreamDimensions(stream, &w, &h, &stride);
     const std::vector<libcamera::Span<uint8_t>> mem = app->Mmap(payload->buffers[stream]);
-    frame.create(h,w,CV_8UC3);
-    uint ls = w*3;
+    //frame.create(h,w,CV_8UC3);
+    //uint ls = w*3;
     uint8_t *ptr = (uint8_t *)mem[0].data();
     for (unsigned int i = 0; i < h; i++, ptr += stride)
     {
-        memcpy(frame.ptr(i),ptr,ls);
+        //memcpy(frame.ptr(i),ptr,ls);
     }
 }
 
@@ -67,12 +67,17 @@ bool PiCamera::captureFrame(cv::Mat &frame)
         return false;
     else if (msg.type != LibcameraApp::MsgType::RequestComplete)
         return false;
-    if (app->ViewfinderStream())
-        std::cerr << "Viewfinder frame "<<std::endl;
-    else if (app->StillStream())
+    if (app->StillStream())
     {
         app->StopCamera();
         getImage(frame, std::get<CompletedRequestPtr>(msg.payload));
+        app->Teardown();
+        app->CloseCamera();
+    } else {
+        std::cerr<<"Incorrect stream received"<<std::endl;
+        return false;
+        app->StopCamera();
+        app->Teardown();
         app->CloseCamera();
     }
     return true;
