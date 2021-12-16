@@ -55,7 +55,6 @@ public:
         sharpness=1.0;
         denoise="auto";
         verbose=false;
-
 	}
 
 	virtual ~Options() {}
@@ -75,26 +74,16 @@ public:
 	bool list_cameras;
 	bool verbose;
 	uint64_t timeout; // in ms
-	std::string config_file;
-	std::string post_process_file;
-	unsigned int width;
-	unsigned int height;
+    unsigned int photo_width, photo_height;
+    unsigned int video_width, video_height;
 	bool rawfull;
-	bool nopreview;
-	std::string preview;
-	bool fullscreen;
-	unsigned int preview_x, preview_y, preview_width, preview_height;
 	libcamera::Transform transform;
-	std::string roi;
 	float roi_x, roi_y, roi_width, roi_height;
 	float shutter;
 	float gain;
 	float ev;
-	std::string awbgains;
 	float awb_gain_r;
 	float awb_gain_b;
-	bool flush;
-	unsigned int wrap;
 	float brightness;
 	float contrast;
 	float saturation;
@@ -102,12 +91,6 @@ public:
 	float framerate;
 	std::string denoise;
 	std::string info_text;
-	unsigned int viewfinder_width;
-	unsigned int viewfinder_height;
-	std::string tuning_file;
-	bool qt_preview;
-	unsigned int lores_width;
-	unsigned int lores_height;
 	unsigned int camera;
 
 protected:

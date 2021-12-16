@@ -95,7 +95,6 @@ public:
 	void OpenCamera();
 	void CloseCamera();
 
-	void ConfigureViewfinder();
 	void ConfigureStill(unsigned int flags = FLAG_STILL_NONE);
 	void ConfigureVideo(unsigned int flags = FLAG_VIDEO_NONE);
 

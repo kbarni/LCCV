@@ -72,74 +72,6 @@ void LibcameraApp::CloseCamera()
 		std::cerr << "Camera closed" << std::endl;
 }
 
-void LibcameraApp::ConfigureViewfinder()
-{
-	if (options_->verbose)
-		std::cerr << "Configuring viewfinder..." << std::endl;
-
-	bool have_lores_stream = options_->lores_width && options_->lores_height;
-	StreamRoles stream_roles = { StreamRole::Viewfinder };
-	if (have_lores_stream)
-		stream_roles.push_back(StreamRole::Viewfinder);
-	configuration_ = camera_->generateConfiguration(stream_roles);
-	if (!configuration_)
-		throw std::runtime_error("failed to generate viewfinder configuration");
-
-	Size size(1280, 960);
-	if (options_->viewfinder_width && options_->viewfinder_height)
-		size = Size(options_->viewfinder_width, options_->viewfinder_height);
-	else if (camera_->properties().contains(properties::PixelArrayActiveAreas))
-	{
-		// The idea here is that most sensors will have a 2x2 binned mode that
-		// we can pick up. If it doesn't, well, you can always specify the size
-		// you want exactly with the viewfinder_width/height options_->
-		size = camera_->properties().get(properties::PixelArrayActiveAreas)[0].size() / 2;
-		// If width and height were given, we might be switching to capture
-		// afterwards - so try to match the field of view.
-		if (options_->width && options_->height)
-			size = size.boundedToAspectRatio(Size(options_->width, options_->height));
-		size.alignDownTo(2, 2); // YUV420 will want to be even
-		if (options_->verbose)
-			std::cerr << "Viewfinder size chosen is " << size.toString() << std::endl;
-	}
-
-	// Finally trim the image size to the largest that the preview can handle.
-	Size max_size;
-	if (max_size.width && max_size.height)
-	{
-		size.boundTo(max_size.boundedToAspectRatio(size)).alignDownTo(2, 2);
-		if (options_->verbose)
-			std::cerr << "Final viewfinder size is " << size.toString() << std::endl;
-	}
-
-	// Now we get to override any of the default settings from the options_->
-	configuration_->at(0).pixelFormat = libcamera::formats::YUV420;
-	configuration_->at(0).size = size;
-
-	if (have_lores_stream)
-	{
-		Size lores_size(options_->lores_width, options_->lores_height);
-		lores_size.alignDownTo(2, 2);
-		if (lores_size.width > size.width || lores_size.height > size.height)
-			throw std::runtime_error("Low res image larger than viewfinder");
-		configuration_->at(1).pixelFormat = libcamera::formats::YUV420;
-		configuration_->at(1).size = lores_size;
-		configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
-	}
-
-	configuration_->transform = options_->transform;
-
-	configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
-	setupCapture();
-
-	streams_["viewfinder"] = configuration_->at(0).stream();
-	if (have_lores_stream)
-		streams_["lores"] = configuration_->at(1).stream();
-
-	if (options_->verbose)
-		std::cerr << "Viewfinder setup complete" << std::endl;
-}
-
 void LibcameraApp::ConfigureStill(unsigned int flags)
 {
 	if (options_->verbose)
@@ -167,11 +99,12 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 		configuration_->at(0).bufferCount = 2;
 	else if ((flags & FLAG_STILL_BUFFER_MASK) == FLAG_STILL_TRIPLE_BUFFER)
 		configuration_->at(0).bufferCount = 3;
-	if (options_->width)
-		configuration_->at(0).size.width = options_->width;
-	if (options_->height)
-		configuration_->at(0).size.height = options_->height;
-	configuration_->transform = options_->transform;
+    if (options_->photo_width)
+        configuration_->at(0).size.width = options_->photo_width;
+    if (options_->photo_height)
+        configuration_->at(0).size.height = options_->photo_height;
+
+    configuration_->transform = options_->transform;
 
 	if (have_raw_stream && !options_->rawfull)
 	{
@@ -197,16 +130,11 @@ void LibcameraApp::ConfigureVideo(unsigned int flags)
 		std::cerr << "Configuring video..." << std::endl;
 
 	bool have_raw_stream = flags & FLAG_VIDEO_RAW;
-	bool have_lores_stream = options_->lores_width && options_->lores_height;
 	StreamRoles stream_roles = { StreamRole::VideoRecording };
-	int lores_index = 1;
 	if (have_raw_stream)
 	{
 		stream_roles.push_back(StreamRole::Raw);
-		lores_index = 2;
 	}
-	if (have_lores_stream)
-		stream_roles.push_back(StreamRole::Viewfinder);
 	configuration_ = camera_->generateConfiguration(stream_roles);
 	if (!configuration_)
 		throw std::runtime_error("failed to generate video configuration");
@@ -214,11 +142,12 @@ void LibcameraApp::ConfigureVideo(unsigned int flags)
 	// Now we get to override any of the default settings from the options_->
 	configuration_->at(0).pixelFormat = libcamera::formats::YUV420;
 	configuration_->at(0).bufferCount = 6; // 6 buffers is better than 4
-	if (options_->width)
-		configuration_->at(0).size.width = options_->width;
-	if (options_->height)
-		configuration_->at(0).size.height = options_->height;
-	configuration_->transform = options_->transform;
+    if (options_->video_width)
+        configuration_->at(0).size.width = options_->video_width;
+    if (options_->video_height)
+        configuration_->at(0).size.height = options_->video_height;
+
+    configuration_->transform = options_->transform;
 
 	if (have_raw_stream)
 	{
@@ -229,17 +158,6 @@ void LibcameraApp::ConfigureVideo(unsigned int flags)
 		}
 		configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
 	}
-	if (have_lores_stream)
-	{
-		Size lores_size(options_->lores_width, options_->lores_height);
-		lores_size.alignDownTo(2, 2);
-		if (lores_size.width > configuration_->at(0).size.width ||
-			lores_size.height > configuration_->at(0).size.height)
-			throw std::runtime_error("Low res image larger than video");
-		configuration_->at(lores_index).pixelFormat = libcamera::formats::YUV420;
-		configuration_->at(lores_index).size = lores_size;
-		configuration_->at(lores_index).bufferCount = configuration_->at(0).bufferCount;
-	}
 	configuration_->transform = options_->transform;
 
 	configureDenoise(options_->denoise == "auto" ? "cdn_fast" : options_->denoise);
@@ -248,8 +166,6 @@ void LibcameraApp::ConfigureVideo(unsigned int flags)
 	streams_["video"] = configuration_->at(0).stream();
 	if (have_raw_stream)
 		streams_["raw"] = configuration_->at(1).stream();
-	if (have_lores_stream)
-		streams_["lores"] = configuration_->at(lores_index).stream();
 
 	if (options_->verbose)
 		std::cerr << "Video setup complete" << std::endl;
