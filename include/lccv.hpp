@@ -28,16 +28,16 @@ public:
 
 protected:
     void run();
-private:
+protected:
     LibcameraApp *app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
     static void *videoThreadFunc(void *p);
     pthread_t videothread;
     unsigned int still_flags;
-    static unsigned int vw,vh,vstr;
-    static std::atomic<bool> running,frameready;
-    static uint8_t *framebuffer;
-    static std::mutex mtx;
+    unsigned int vw,vh,vstr;
+    std::atomic<bool> running,frameready;
+    uint8_t *framebuffer;
+    std::mutex mtx;
 };
 
 }

@@ -124,51 +124,31 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 		std::cerr << "Still capture setup complete" << std::endl;
 }
 
-void LibcameraApp::ConfigureVideo(unsigned int flags)
+void LibcameraApp::ConfigureViewfinder()
 {
-	if (options_->verbose)
-		std::cerr << "Configuring video..." << std::endl;
+    if (options_->verbose)
+        std::cerr << "Configuring viewfinder..." << std::endl;
 
-	bool have_raw_stream = flags & FLAG_VIDEO_RAW;
-	StreamRoles stream_roles = { StreamRole::VideoRecording };
-	if (have_raw_stream)
-	{
-		stream_roles.push_back(StreamRole::Raw);
-	}
-	configuration_ = camera_->generateConfiguration(stream_roles);
-	if (!configuration_)
-		throw std::runtime_error("failed to generate video configuration");
+    StreamRoles stream_roles = { StreamRole::Viewfinder };
+    configuration_ = camera_->generateConfiguration(stream_roles);
+    if (!configuration_)
+        throw std::runtime_error("failed to generate viewfinder configuration");
 
-	// Now we get to override any of the default settings from the options_->
-	configuration_->at(0).pixelFormat = libcamera::formats::YUV420;
-	configuration_->at(0).bufferCount = 6; // 6 buffers is better than 4
-    if (options_->video_width)
-        configuration_->at(0).size.width = options_->video_width;
-    if (options_->video_height)
-        configuration_->at(0).size.height = options_->video_height;
+    // Now we get to override any of the default settings from the options_->
+    configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
+    configuration_->at(0).size.width = options_->video_width;
+    configuration_->at(0).size.height = options_->video_height;
+    configuration_->at(0).bufferCount = 4;
 
     configuration_->transform = options_->transform;
 
-	if (have_raw_stream)
-	{
-		if (!options_->rawfull)
-		{
-			configuration_->at(1).size.width = configuration_->at(0).size.width;
-			configuration_->at(1).size.height = configuration_->at(0).size.height;
-		}
-		configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
-	}
-	configuration_->transform = options_->transform;
+    configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
+    setupCapture();
 
-	configureDenoise(options_->denoise == "auto" ? "cdn_fast" : options_->denoise);
-	setupCapture();
+    streams_["viewfinder"] = configuration_->at(0).stream();
 
-	streams_["video"] = configuration_->at(0).stream();
-	if (have_raw_stream)
-		streams_["raw"] = configuration_->at(1).stream();
-
-	if (options_->verbose)
-		std::cerr << "Video setup complete" << std::endl;
+    if (options_->verbose)
+        std::cerr << "Viewfinder setup complete" << std::endl;
 }
 
 void LibcameraApp::Teardown()

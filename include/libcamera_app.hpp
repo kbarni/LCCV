@@ -96,7 +96,7 @@ public:
 	void CloseCamera();
 
 	void ConfigureStill(unsigned int flags = FLAG_STILL_NONE);
-	void ConfigureVideo(unsigned int flags = FLAG_VIDEO_NONE);
+    void ConfigureViewfinder();
 
 	void Teardown();
 	void StartCamera();
