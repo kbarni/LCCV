@@ -16,7 +16,7 @@ int main()
     int ch=0;
     while(ch!=27){
         if(!cam.getVideoFrame(image,1000)){
-            std::cout<<"Camera error"<<std::endl;
+            std::cout<<"Timeout error"<<std::endl;
         }
         else{
             cv::imshow("Video",image);

@@ -85,7 +85,7 @@ bool PiCamera::startVideo()
     app->ConfigureViewfinder();
     app->StartCamera();
 
-    bool ret = pthread_create(&videothread, NULL, &videoThreadFunc, this);
+    int ret = pthread_create(&videothread, NULL, &videoThreadFunc, this);
     if (ret != 0) {
         std::cerr<<"Error starting video thread";
         return false;
@@ -101,8 +101,8 @@ void PiCamera::stopVideo()
 
     //join thread
     void *status;
-    bool ret = pthread_join(videothread, &status);
-    if(!ret)
+    int ret = pthread_join(videothread, &status);
+    if(ret<0)
         std::cerr<<"Error joining thread"<<std::endl;
 
     app->StopCamera();
@@ -147,7 +147,6 @@ void *PiCamera::videoThreadFunc(void *p)
     libcamera::Stream *stream = t->app->ViewfinderStream(&t->vw,&t->vh,&t->vstr);
     int buffersize=t->vh*t->vstr;
     if(t->framebuffer)delete[] t->framebuffer;
-    std::cout<<"Allocating buffer"<<buffersize<<" ("<<t->vh<<"x"<<t->vstr<<")"<<std::endl;
     t->framebuffer=new uint8_t[buffersize];
     std::vector<libcamera::Span<uint8_t>> mem;
 

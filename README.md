@@ -25,9 +25,7 @@ LCCV aims to provide a simple to use wrapper library that allows you to access t
 Features and limitations
 ------------------------
 
-LCCV is heavily based on Raspbian's `libcamera-apps` source code. It is aimed to offer full control over the camera, so the original configuration class was kept instead of a new one based on OpenCV's VideoCapture class. Note that only the camera parameters are available, other parameters and functions, like previewing, cropping and post-processing were stripped from the library.
-
-This first version gives access to the high resolution photo mode; continuous acquisition (video mode) will follow soon.
+LCCV is heavily based on Raspbian's `libcamera-apps` source code. It is aimed to offer full control over the camera, so the original options class was kept instead of a new one based on OpenCV's VideoCapture class. Note that only the camera parameters are available, other parameters and functions, like previewing, cropping and post-processing were stripped from the library.
 
 Prerequisites
 -------------
@@ -51,7 +49,7 @@ Building and installing
     cmake ..
     make
     sudo make install
-    
+
 Using the library
 -----------------
 
