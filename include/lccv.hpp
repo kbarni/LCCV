@@ -19,7 +19,9 @@ public:
     Options *options;
 
     //Photo mode
+    bool startPhoto();
     bool capturePhoto(cv::Mat &frame);
+    bool stopPhoto();
 
     //Video mode
     bool startVideo();
@@ -38,6 +40,7 @@ protected:
     std::atomic<bool> running,frameready;
     uint8_t *framebuffer;
     std::mutex mtx;
+    bool camerastarted;
 };
 
 }

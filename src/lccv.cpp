@@ -26,6 +26,7 @@ PiCamera::PiCamera()
     running.store(false, std::memory_order_release);;
     frameready.store(false, std::memory_order_release);;
     framebuffer=nullptr;
+    camerastarted=false;
 }
 
 PiCamera::~PiCamera()
@@ -48,10 +49,29 @@ void PiCamera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
     }
 }
 
-bool PiCamera::capturePhoto(cv::Mat &frame)
+bool PiCamera::startPhoto()
 {
     app->OpenCamera();
     app->ConfigureStill(still_flags);
+    camerastarted=true;
+    return true;
+}
+bool PiCamera::stopPhoto()
+{
+    if(camerastarted){
+        camerastarted=false;
+        app->Teardown();
+        app->CloseCamera();
+    }
+    return true;
+}
+
+bool PiCamera::capturePhoto(cv::Mat &frame)
+{
+    if(!camerastarted){
+        app->OpenCamera();
+        app->ConfigureStill(still_flags);
+    }
     app->StartCamera();
     LibcameraApp::Msg msg = app->Wait();
     if (msg.type == LibcameraApp::MsgType::Quit)
@@ -68,14 +88,17 @@ bool PiCamera::capturePhoto(cv::Mat &frame)
         std::cerr<<"Incorrect stream received"<<std::endl;
         return false;
         app->StopCamera();
-        app->Teardown();
-        app->CloseCamera();
+        if(!camerastarted){
+            app->Teardown();
+            app->CloseCamera();
+        }
     }
     return true;
 }
 
 bool PiCamera::startVideo()
 {
+    if(camerastarted)stopPhoto();
     if(running.load(std::memory_order_release)){
         std::cerr<<"Video thread already running";
         return false;
