@@ -3,13 +3,11 @@ LibCamera bindings for OpenCV
 
 LCCV (*LibCamera bindings for OpenCV*) is a small wrapper library that provides access to the Raspberry Pi camera in OpenCV.
 
-### IMPORTANT WARNING: 
+### WARNING: 
 
-***This is a very early version, so expect to have several bugs.***
+This is still an early version of the project, so expect to have some bugs.
 
-***Note that the API still might have some changes!***
-
-***Please help with the development by reporting the bugs and issues you encounter, committing bugfixes, and proposing ideas!***
+Please help with the development by reporting the bugs and issues you encounter, committing bugfixes, and proposing ideas!
 
 Context
 -------
