@@ -77,13 +77,9 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 	if (options_->verbose)
 		std::cerr << "Configuring still capture..." << std::endl;
 
-	// Will add a raw capture stream once that works properly.
-	bool have_raw_stream = flags & FLAG_STILL_RAW;
-	StreamRoles stream_roles;
-	if (have_raw_stream)
-		stream_roles = { StreamRole::StillCapture, StreamRole::Raw };
-	else
-		stream_roles = { StreamRole::StillCapture };
+	// Always request a raw stream as this forces the full resolution capture mode.
+	// (options_->mode can override the choice of camera mode, however.)
+	StreamRoles stream_roles = { StreamRole::StillCapture, StreamRole::Raw };
 	configuration_ = camera_->generateConfiguration(stream_roles);
 	if (!configuration_)
 		throw std::runtime_error("failed to generate still capture configuration");
@@ -106,19 +102,18 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 
     configuration_->transform = options_->transform;
 
-	if (have_raw_stream && !options_->rawfull)
+	//if (have_raw_stream && !options_->rawfull)
 	{
 		configuration_->at(1).size.width = configuration_->at(0).size.width;
 		configuration_->at(1).size.height = configuration_->at(0).size.height;
-		configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
 	}
+	configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
 
 	configureDenoise(options_->denoise == "auto" ? "cdn_hq" : options_->denoise);
 	setupCapture();
 
 	streams_["still"] = configuration_->at(0).stream();
-	if (have_raw_stream)
-		streams_["raw"] = configuration_->at(1).stream();
+	streams_["raw"] = configuration_->at(1).stream();
 
 	if (options_->verbose)
 		std::cerr << "Still capture setup complete" << std::endl;
@@ -270,7 +265,7 @@ void LibcameraApp::StopCamera()
 
 	// An application might be holding a CompletedRequest, so queueRequest will get
 	// called to delete it later, but we need to know not to try and re-queue it.
-	known_completed_requests_.clear();
+	completed_requests_.clear();
 
 	msg_queue_.Clear();
 
@@ -294,7 +289,9 @@ void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 {
 	BufferMap buffers(std::move(completed_request->buffers));
 
+	Request *request = completed_request->request;
 	delete completed_request;
+	assert(request);
 
 	// This function may run asynchronously so needs protection from the
 	// camera stopping at the same time.
@@ -304,24 +301,12 @@ void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 
 	// An application could be holding a CompletedRequest while it stops and re-starts
 	// the camera, after which we don't want to queue another request now.
-	auto it = known_completed_requests_.find(completed_request);
-	if (it == known_completed_requests_.end())
-		return;
-	known_completed_requests_.erase(it);
-
-	Request *request = nullptr;
 	{
-		std::lock_guard<std::mutex> lock(free_requests_mutex_);
-		if (!free_requests_.empty())
-		{
-			request = free_requests_.front();
-			free_requests_.pop();
-		}
-	}
-	if (!request)
-	{
-		std::cerr << "WARNING: could not make request!" << std::endl;
-		return;
+		std::lock_guard<std::mutex> lock(completed_requests_mutex_);
+		auto it = completed_requests_.find(completed_request);
+		if (it == completed_requests_.end())
+			return;
+		completed_requests_.erase(it);
 	}
 
 	for (auto const &p : buffers)
@@ -439,6 +424,7 @@ void LibcameraApp::setupCapture()
 
 		if (allocator_->allocate(stream) < 0)
 			throw std::runtime_error("failed to allocate capture buffers");
+
 		for (const std::unique_ptr<FrameBuffer> &buffer : allocator_->buffers(stream))
 		{
 			// "Single plane" buffers appear as multi-plane here, but we can spot them because then
@@ -448,9 +434,9 @@ void LibcameraApp::setupCapture()
 			{
 				const FrameBuffer::Plane &plane = buffer->planes()[i];
 				buffer_size += plane.length;
-                if (i == buffer->planes().size() - 1 || plane.fd.get() != buffer->planes()[i + 1].fd.get())
+				if (i == buffer->planes().size() - 1 || plane.fd.get() != buffer->planes()[i + 1].fd.get())
 				{
-                    void *memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, plane.fd.get(), 0);
+					void *memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, plane.fd.get(), 0);
 					mapped_buffers_[buffer.get()].push_back(
 						libcamera::Span<uint8_t>(static_cast<uint8_t *>(memory), buffer_size));
 					buffer_size = 0;
@@ -502,13 +488,11 @@ void LibcameraApp::requestComplete(Request *request)
 	if (request->status() == Request::RequestCancelled)
 		return;
 
-	CompletedRequest *r = new CompletedRequest(sequence_++, request->buffers(), request->metadata());
+	CompletedRequest *r = new CompletedRequest(sequence_++, request);
 	CompletedRequestPtr payload(r, [this](CompletedRequest *cr) { this->queueRequest(cr); });
-	known_completed_requests_.insert(r);
 	{
-		request->reuse();
-		std::lock_guard<std::mutex> lock(free_requests_mutex_);
-		free_requests_.push(request);
+		std::lock_guard<std::mutex> lock(completed_requests_mutex_);
+		completed_requests_.insert(r);
 	}
 
 	// We calculate the instantaneous framerate in case anyone wants it.

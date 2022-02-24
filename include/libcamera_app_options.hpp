@@ -55,6 +55,7 @@ public:
         sharpness=1.0;
         denoise="auto";
         verbose=false;
+	camera=0;
 	}
 
 	virtual ~Options() {}

@@ -10,11 +10,7 @@
 #include <sys/mman.h>
 
 #include <condition_variable>
-#include <any>
-#include <array>
-#include <iomanip>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -22,6 +18,9 @@
 #include <string>
 #include <thread>
 #include <variant>
+#include <any>
+#include <map>
+#include <iomanip>
 
 #include <libcamera/base/span.h>
 #include <libcamera/camera.h>
@@ -85,6 +84,7 @@ public:
 
 	static constexpr unsigned int FLAG_VIDEO_NONE = 0;
 	static constexpr unsigned int FLAG_VIDEO_RAW = 1; // request raw image stream
+	static constexpr unsigned int FLAG_VIDEO_JPEG_COLOURSPACE = 2; // force JPEG colour space
 
 	LibcameraApp(std::unique_ptr<Options> const opts = nullptr);
 	virtual ~LibcameraApp();
@@ -169,10 +169,10 @@ private:
 	std::map<std::string, Stream *> streams_;
 	FrameBufferAllocator *allocator_ = nullptr;
 	std::map<Stream *, std::queue<FrameBuffer *>> frame_buffers_;
-	std::mutex free_requests_mutex_;
 	std::queue<Request *> free_requests_;
 	std::vector<std::unique_ptr<Request>> requests_;
-	std::set<CompletedRequest *> known_completed_requests_;
+	std::mutex completed_requests_mutex_;
+	std::set<CompletedRequest *> completed_requests_;
 	bool camera_started_ = false;
 	std::mutex camera_stop_mutex_;
 	MessageQueue<Msg> msg_queue_;
@@ -360,14 +360,17 @@ struct CompletedRequest
 {
 	using BufferMap = libcamera::Request::BufferMap;
 	using ControlList = libcamera::ControlList;
+	using Request = libcamera::Request;
 
-	CompletedRequest(unsigned int seq, BufferMap const &b, ControlList const &m)
-		: sequence(seq), buffers(b), metadata(m)
+	CompletedRequest(unsigned int seq, Request *r)
+		: sequence(seq), buffers(r->buffers()), metadata(r->metadata()), request(r)
 	{
+		r->reuse();
 	}
 	unsigned int sequence;
 	BufferMap buffers;
 	ControlList metadata;
+	Request *request;
 	float framerate;
 	Metadata post_process_metadata;
 };
