@@ -20,8 +20,8 @@ PiCamera::PiCamera()
     options->setMetering(Metering_Modes::METERING_MATRIX);
     options->setExposureMode(Exposure_Modes::EXPOSURE_NORMAL);
     options->setWhiteBalance(WhiteBalance_Modes::WB_AUTO);
-    options->contrast = 1.0;
-    options->saturation = 1.0;
+    options->contrast = 1.0f;
+    options->saturation = 1.0f;
     still_flags |= LibcameraApp::FLAG_STILL_RGB;
     running.store(false, std::memory_order_release);;
     frameready.store(false, std::memory_order_release);;

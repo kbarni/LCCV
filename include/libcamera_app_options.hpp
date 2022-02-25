@@ -50,11 +50,18 @@ public:
         metering_index = Metering_Modes::METERING_CENTRE;
         exposure_index=Exposure_Modes::EXPOSURE_NORMAL;
         awb_index=WhiteBalance_Modes::WB_AUTO;
-        saturation=1.0;
-        contrast=1.0;
-        sharpness=1.0;
+        saturation=1.0f;
+        contrast=1.0f;
+        sharpness=1.0f;
+	brightness=0.0f;
+	shutter=0.0f;
+	gain=0.0f;
+	ev=0.0f;
+	roi_x=roi_y=roi_width=roi_height=0;
+	awb_gain_r=awb_gain_b=0;
         denoise="auto";
         verbose=false;
+	transform=libcamera::Transform::Identity;
 	camera=0;
 	}
 
@@ -100,7 +107,4 @@ protected:
     int awb_index;
 
 private:
-	bool hflip_;
-	bool vflip_;
-	int rotation_;
 };

@@ -14,6 +14,7 @@ LibcameraApp::LibcameraApp(std::unique_ptr<Options> opts)
 {
 	if (!options_)
 		options_ = std::make_unique<Options>();
+	controls_.clear();
 }
 
 LibcameraApp::~LibcameraApp()
