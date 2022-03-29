@@ -1,7 +1,7 @@
-LibCamera bindings for OpenCV
+libcamera bindings for OpenCV
 =============================
 
-LCCV (*LibCamera bindings for OpenCV*) is a small wrapper library that provides access to the Raspberry Pi camera in OpenCV.
+LCCV (*libcamera bindings for OpenCV*) is a small wrapper library that provides access to the Raspberry Pi camera in OpenCV.
 
 ### WARNING: 
 
@@ -12,7 +12,7 @@ Please help with the development by reporting the bugs and issues you encounter,
 Context
 -------
 
-In Raspbian Bullseye, the Raspberry Pi camera framework was completely rebased from MMAL to the LibCamera library - thus breaking most of the previous camera dependencies.
+In Raspbian Bullseye, the Raspberry Pi camera framework was completely rebased from MMAL to the libcamera library - thus breaking most of the previous camera dependencies.
 
 Raspbian comes with the handy `libcamera-apps` package that duplicates the old `raspistill` and `raspivid` applications, with some added functionnality, like the possibility of adding postprocessing routines to the capturing process.
 
