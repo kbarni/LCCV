@@ -178,9 +178,9 @@ void LibcameraApp::StartCamera()
 
 	// Build a list of initial controls that we must set in the camera before starting it.
 	// We don't overwrite anything the application may have set before calling us.
-	if (!controls_.contains(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
+	if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
 	{
-		Rectangle sensor_area = camera_->properties().get(properties::ScalerCropMaximum);
+		Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
 		int x = options_->roi_x * sensor_area.width;
 		int y = options_->roi_y * sensor_area.height;
 		int w = options_->roi_width * sensor_area.width;
@@ -195,38 +195,38 @@ void LibcameraApp::StartCamera()
 	// Framerate is a bit weird. If it was set programmatically, we go with that, but
 	// otherwise it applies only to preview/video modes. For stills capture we set it
 	// as long as possible so that we get whatever the exposure profile wants.
-	if (!controls_.contains(controls::FrameDurationLimits))
+	if (!controls_.get(controls::FrameDurationLimits))
 	{
 		if (StillStream())
-			controls_.set(controls::FrameDurationLimits, { INT64_C(100), INT64_C(1000000000) });
+			controls_.set(controls::FrameDurationLimits, libcamera::Span<const int64_t, 2>({ INT64_C(100), INT64_C(1000000000) }));
 		else if (options_->framerate > 0)
 		{
 			int64_t frame_time = 1000000 / options_->framerate; // in us
-			controls_.set(controls::FrameDurationLimits, { frame_time, frame_time });
+			controls_.set(controls::FrameDurationLimits, libcamera::Span<const int64_t, 2>({ frame_time, frame_time }));
 		}
 	}
 
-	if (!controls_.contains(controls::ExposureTime) && options_->shutter)
+	if (!controls_.get(controls::ExposureTime) && options_->shutter)
 		controls_.set(controls::ExposureTime, options_->shutter);
-	if (!controls_.contains(controls::AnalogueGain) && options_->gain)
+	if (!controls_.get(controls::AnalogueGain) && options_->gain)
 		controls_.set(controls::AnalogueGain, options_->gain);
-	if (!controls_.contains(controls::AeMeteringMode))
+	if (!controls_.get(controls::AeMeteringMode))
 		controls_.set(controls::AeMeteringMode, options_->getMeteringMode());
-	if (!controls_.contains(controls::AeExposureMode))
+	if (!controls_.get(controls::AeExposureMode))
 		controls_.set(controls::AeExposureMode, options_->getExposureMode());
-	if (!controls_.contains(controls::ExposureValue))
+	if (!controls_.get(controls::ExposureValue))
 		controls_.set(controls::ExposureValue, options_->ev);
-	if (!controls_.contains(controls::AwbMode))
+	if (!controls_.get(controls::AwbMode))
 		controls_.set(controls::AwbMode, options_->getWhiteBalance());
-	if (!controls_.contains(controls::ColourGains) && options_->awb_gain_r && options_->awb_gain_b)
-		controls_.set(controls::ColourGains, { options_->awb_gain_r, options_->awb_gain_b });
-	if (!controls_.contains(controls::Brightness))
+	if (!controls_.get(controls::ColourGains) && options_->awb_gain_r && options_->awb_gain_b)
+		controls_.set(controls::ColourGains, libcamera::Span<const float, 2>({ options_->awb_gain_r, options_->awb_gain_b }));
+	if (!controls_.get(controls::Brightness))
 		controls_.set(controls::Brightness, options_->brightness);
-	if (!controls_.contains(controls::Contrast))
+	if (!controls_.get(controls::Contrast))
 		controls_.set(controls::Contrast, options_->contrast);
-	if (!controls_.contains(controls::Saturation))
+	if (!controls_.get(controls::Saturation))
 		controls_.set(controls::Saturation, options_->saturation);
-	if (!controls_.contains(controls::Sharpness))
+	if (!controls_.get(controls::Sharpness))
 		controls_.set(controls::Sharpness, options_->sharpness);
 
 	if (camera_->start(&controls_))
