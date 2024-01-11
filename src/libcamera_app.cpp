@@ -101,7 +101,7 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
     if (options_->photo_height)
         configuration_->at(0).size.height = options_->photo_height;
 
-    configuration_->transform = options_->transform;
+//    configuration_->transform = options_->transform;
 
 	//if (have_raw_stream && !options_->rawfull)
 	{
@@ -136,7 +136,7 @@ void LibcameraApp::ConfigureViewfinder()
     configuration_->at(0).size.height = options_->video_height;
     configuration_->at(0).bufferCount = 4;
 
-    configuration_->transform = options_->transform;
+//    configuration_->transform = options_->transform;
 
     configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
     setupCapture();
