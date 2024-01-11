@@ -281,6 +281,22 @@ void LibcameraApp::StopCamera()
 		std::cerr << "Camera stopped!" << std::endl;
 }
 
+void LibcameraApp::ApplyRoiSettings(){
+    if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
+    {
+        Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
+        int x = options_->roi_x * sensor_area.width;
+        int y = options_->roi_y * sensor_area.height;
+        int w = options_->roi_width * sensor_area.width;
+        int h = options_->roi_height * sensor_area.height;
+        Rectangle crop(x, y, w, h);
+        crop.translateBy(sensor_area.topLeft());
+        if (options_->verbose)
+            std::cerr << "Using crop " << crop.toString() << std::endl;
+        controls_.set(controls::ScalerCrop, crop);
+    }
+}
+
 LibcameraApp::Msg LibcameraApp::Wait()
 {
 	return msg_queue_.Wait();

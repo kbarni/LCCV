@@ -197,3 +197,8 @@ void *PiCamera::videoThreadFunc(void *p)
     }
     return NULL;
 }
+
+void PiCamera::ApplyZoomOptions()
+{
+    app->ApplyRoiSettings();
+}
