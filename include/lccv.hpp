@@ -28,6 +28,9 @@ public:
     bool getVideoFrame(cv::Mat &frame, unsigned int timeout);
     void stopVideo();
 
+    //Applies new zoom options. Before invoking this func modify options->roi.
+    void ApplyZoomOptions();
+
 protected:
     void run();
 protected:

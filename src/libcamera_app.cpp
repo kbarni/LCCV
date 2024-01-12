@@ -101,7 +101,7 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
     if (options_->photo_height)
         configuration_->at(0).size.height = options_->photo_height;
 
-    configuration_->transform = options_->transform;
+//    configuration_->transform = options_->transform;
 
 	//if (have_raw_stream && !options_->rawfull)
 	{
@@ -136,7 +136,7 @@ void LibcameraApp::ConfigureViewfinder()
     configuration_->at(0).size.height = options_->video_height;
     configuration_->at(0).bufferCount = 4;
 
-    configuration_->transform = options_->transform;
+//    configuration_->transform = options_->transform;
 
     configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
     setupCapture();
@@ -279,6 +279,22 @@ void LibcameraApp::StopCamera()
 
 	if (options_->verbose && !options_->help)
 		std::cerr << "Camera stopped!" << std::endl;
+}
+
+void LibcameraApp::ApplyRoiSettings(){
+    if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
+    {
+        Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
+        int x = options_->roi_x * sensor_area.width;
+        int y = options_->roi_y * sensor_area.height;
+        int w = options_->roi_width * sensor_area.width;
+        int h = options_->roi_height * sensor_area.height;
+        Rectangle crop(x, y, w, h);
+        crop.translateBy(sensor_area.topLeft());
+        if (options_->verbose)
+            std::cerr << "Using crop " << crop.toString() << std::endl;
+        controls_.set(controls::ScalerCrop, crop);
+    }
 }
 
 LibcameraApp::Msg LibcameraApp::Wait()
