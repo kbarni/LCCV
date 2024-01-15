@@ -102,6 +102,8 @@ public:
 	void StartCamera();
 	void StopCamera();
 
+    void ApplyRoiSettings();
+
 	Msg Wait();
 	void PostMessage(MsgType &t, MsgPayload &p);
 
