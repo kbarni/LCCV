@@ -307,7 +307,6 @@ void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 	BufferMap buffers(std::move(completed_request->buffers));
 
 	Request *request = completed_request->request;
-	delete completed_request;
 	assert(request);
 
 	// This function may run asynchronously so needs protection from the
@@ -321,6 +320,7 @@ void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 	{
 		std::lock_guard<std::mutex> lock(completed_requests_mutex_);
 		auto it = completed_requests_.find(completed_request);
+        delete completed_request;
 		if (it == completed_requests_.end())
 			return;
 		completed_requests_.erase(it);
