@@ -99,7 +99,7 @@ bool PiCamera::capturePhoto(cv::Mat &frame)
 bool PiCamera::startVideo()
 {
     if(camerastarted)stopPhoto();
-    if(running.load(std::memory_order_release)){
+    if(running.load(std::memory_order_relaxed)){
         std::cerr<<"Video thread already running";
         return false;
     }
