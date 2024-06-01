@@ -51,7 +51,6 @@ message(STATUS "libcamera library found:")
 message(STATUS "    version: ${LIBCAMERA_VERSION}")
 message(STATUS "    libraries: ${LIBCAMERA_LINK_LIBRARIES}")
 message(STATUS "    include path: ${LIBCAMERA_INCLUDE_DIRS}")
-include_directories(include ${LIBCAMERA_INCLUDE_DIRS} ${OPENCV_INCLUDE_DIRS})
 
 include(GNUInstallDirs)
 
@@ -67,6 +66,12 @@ set(HEADERS
 )
 
 add_library(liblccv ${SOURCES} ${HEADERS})
+target_include_directories(liblccv
+        PUBLIC
+        include
+        ${LIBCAMERA_INCLUDE_DIRS}
+        ${OPENCV_INCLUDE_DIRS}
+)
 
 set_target_properties(liblccv PROPERTIES PREFIX "" IMPORT_PREFIX "")
 target_link_libraries(liblccv pthread ${LIBCAMERA_LINK_LIBRARIES} ${OpenCV_LIBS})
