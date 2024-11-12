@@ -9,6 +9,8 @@
 #include "libcamera_app.hpp"
 #include "libcamera_app_options.hpp"
 
+typedef void (*ViewfinderCallback)(cv::Mat);
+
 namespace lccv {
 
 class PiCamera {
@@ -19,9 +21,12 @@ public:
     Options *options;
 
     //Photo mode
-    bool startPhoto();
+    void startPhoto(ViewfinderCallback viewfinderFunction = nullptr);
     bool capturePhoto(cv::Mat &frame);
     bool stopPhoto();
+
+    void startViewfinder();
+    void stopViewfinder();
 
     //Video mode
     bool startVideo();
@@ -36,6 +41,8 @@ protected:
 protected:
     LibcameraApp *app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
+    void HandleViewfinderFrame(CompletedRequest &request);
+    cv::Mat ConvertBufferToMat(libcamera::FrameBuffer *buffer)
     static void *videoThreadFunc(void *p);
     pthread_t videothread;
     unsigned int still_flags;
@@ -44,6 +51,9 @@ protected:
     uint8_t *framebuffer;
     std::mutex mtx;
     bool camerastarted;
+
+private:
+    ViewfinderCallback viewfinderCallback;
 };
 
 }

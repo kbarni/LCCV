@@ -49,8 +49,9 @@ void PiCamera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
     }
 }
 
-bool PiCamera::startPhoto()
+bool PiCamera::startPhoto(ViewfinderCallback viewfinderFunction)
 {
+    this->viewfinderCallback = viewfinderFunction;
     app->OpenCamera();
     app->ConfigureStill(still_flags);
     camerastarted=true;
@@ -94,6 +95,37 @@ bool PiCamera::capturePhoto(cv::Mat &frame)
         }
     }
     return true;
+}
+
+void PiCamera::startViewfinder() {
+    if (!viewfinderCallback) return; // No need to start if there's no callback
+
+    // Start enqueuing requests for the viewfinder stream
+    app_->StartCamera();
+
+    // Register a request callback
+    app_->SetViewfinderFrameCallback([this](CompletedRequest &request) {
+        this->HandleViewfinderFrame(request);
+    });
+}
+
+void PiCamera::stopViewfinder() {
+    // Stop the camera
+    app_->StopCamera();
+}
+
+void PiCamera::HandleViewfinderFrame(CompletedRequest &request) {
+    // Get the buffer for the viewfinder stream
+    libcamera::Stream *vf_stream = app_->ViewfinderStream();
+    libcamera::FrameBuffer *buffer = request.buffers[vf_stream];
+
+    // Convert buffer to cv::Mat
+    cv::Mat frame = ConvertBufferToMat(buffer);
+
+    // Call the callback function
+    if (viewfinderCallback) {
+        viewfinderCallback(frame);
+    }
 }
 
 bool PiCamera::startVideo()
@@ -201,4 +233,17 @@ void *PiCamera::videoThreadFunc(void *p)
 void PiCamera::ApplyZoomOptions()
 {
     app->ApplyRoiSettings();
+}
+
+cv::Mat PiCamera::ConvertBufferToMat(libcamera::FrameBuffer *buffer) {
+    // Buffer to cv::Mat conversion
+
+    void *data = buffer->planes()[0].mem;
+    int stride = buffer->planes()[0].stride;
+
+    cv::Mat yuvImage(480 * 3 / 2, 640, CV_8UC1, data, stride);
+    cv::Mat rgbImage;
+    cv::cvtColor(yuvImage, rgbImage, cv::COLOR_YUV2BGR_I420);
+
+    return rgbImage;
 }

@@ -78,9 +78,34 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 	if (options_->verbose)
 		std::cerr << "Configuring still capture..." << std::endl;
 
-	// Always request a raw stream as this forces the full resolution capture mode.
-	// (options_->mode can override the choice of camera mode, however.)
-	StreamRoles stream_roles = { StreamRole::StillCapture, StreamRole::Raw };
+    // Create still stream
+    StreamRoles stream_roles = { StreamRole::StillCapture };
+
+    // Add raw stream if necessary
+    if (options_->raw) {
+        stream_roles.push_back(StreamRole::Raw);
+		rawstreamindex = 1;
+    } else
+		rawstreamindex = 0;
+
+    // Add viewfinder stream if viewfinder callback is set
+    if (camera_->viewfinderCallback) {	//*****!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
+        stream_roles.push_back(StreamRole::Viewfinder);
+		vfstreamindex = rawstreamindex+1;
+    } else
+		vfstreamindex = 0;
+
+    // Configure the camera with the specified streams
+    configuration_ = camera_->GenerateConfiguration(stream_roles);
+
+    // Set viewfinder stream resolution
+    if (camera_->viewfinderCallback) {
+        StreamConfiguration &vf_config = configuration_->at(0); // Assuming index 0 is viewfinder
+        vf_config.pixelFormat = libcamera::formats::YUV420;
+        vf_config.size.width = 640;
+        vf_config.size.height = 480;
+    }
+
 	configuration_ = camera_->generateConfiguration(stream_roles);
 	if (!configuration_)
 		throw std::runtime_error("failed to generate still capture configuration");
@@ -102,19 +127,26 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
         configuration_->at(0).size.height = options_->photo_height;
 
 //    configuration_->transform = options_->transform;
+	streams_["still"] = configuration_->at(0).stream();
 
-	//if (have_raw_stream && !options_->rawfull)
+	if (options_->raw)
 	{
-		configuration_->at(1).size.width = configuration_->at(0).size.width;
-		configuration_->at(1).size.height = configuration_->at(0).size.height;
+		configuration_->at(rawstreamindex).size.width = configuration_->at(0).size.width;
+		configuration_->at(rawstreamindex).size.height = configuration_->at(0).size.height;
+		configuration_->at(rawstreamindex).bufferCount = configuration_->at(0).bufferCount;
+		streams_["raw"] = configuration_->at(rawstreamindex).stream();
 	}
-	configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
+
+	if(camera_->viewfinderCallback) {
+		configuration_->at(vfstreamindex).size.width = 640;
+		configuration_->at(vfstreamindex).size.height = 480;
+		configuration_->at(vfstreamindex).pixelFormat = libcamera::formats::YUV420;
+		streams_["viewfinder"] = configuration_->at(vfstreamindex).stream();
+	}
 
 	configureDenoise(options_->denoise == "auto" ? "cdn_hq" : options_->denoise);
 	setupCapture();
 
-	streams_["still"] = configuration_->at(0).stream();
-	streams_["raw"] = configuration_->at(1).stream();
 
 	if (options_->verbose)
 		std::cerr << "Still capture setup complete" << std::endl;
