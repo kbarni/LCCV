@@ -21,7 +21,7 @@ public:
     Options *options;
 
     //Photo mode
-    void startPhoto(ViewfinderCallback viewfinderFunction = nullptr);
+    bool startPhoto(ViewfinderCallback viewfinderFunction = nullptr);
     bool capturePhoto(cv::Mat &frame);
     bool stopPhoto();
 
@@ -42,7 +42,7 @@ protected:
     LibcameraApp *app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
     void HandleViewfinderFrame(CompletedRequest &request);
-    cv::Mat ConvertBufferToMat(libcamera::FrameBuffer *buffer)
+    cv::Mat ConvertBufferToMat(libcamera::FrameBuffer *buffer);
     static void *videoThreadFunc(void *p);
     pthread_t videothread;
     unsigned int still_flags;

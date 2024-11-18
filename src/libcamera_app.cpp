@@ -152,6 +152,10 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 		std::cerr << "Still capture setup complete" << std::endl;
 }
 
+void LibcameraApp::SetViewfinderFrameCallback(ViewfinderFrameCallback callback) {
+    viewfinder_frame_callback_ = callback;
+}
+
 void LibcameraApp::ConfigureViewfinder()
 {
     if (options_->verbose)

@@ -101,22 +101,22 @@ void PiCamera::startViewfinder() {
     if (!viewfinderCallback) return; // No need to start if there's no callback
 
     // Start enqueuing requests for the viewfinder stream
-    app_->StartCamera();
+    app->StartCamera();
 
     // Register a request callback
-    app_->SetViewfinderFrameCallback([this](CompletedRequest &request) {
+    app->SetViewfinderFrameCallback([this](CompletedRequest &request) {
         this->HandleViewfinderFrame(request);
     });
 }
 
 void PiCamera::stopViewfinder() {
     // Stop the camera
-    app_->StopCamera();
+    app->StopCamera();
 }
 
 void PiCamera::HandleViewfinderFrame(CompletedRequest &request) {
     // Get the buffer for the viewfinder stream
-    libcamera::Stream *vf_stream = app_->ViewfinderStream();
+    libcamera::Stream *vf_stream = app->ViewfinderStream();
     libcamera::FrameBuffer *buffer = request.buffers[vf_stream];
 
     // Convert buffer to cv::Mat

@@ -38,6 +38,8 @@ using CompletedRequestPtr = std::shared_ptr<CompletedRequest>;
 namespace controls = libcamera::controls;
 namespace properties = libcamera::properties;
 
+typedef std::function<void(CompletedRequest &)> ViewfinderFrameCallback;
+
 class LibcameraApp
 {
 public:
@@ -97,6 +99,7 @@ public:
 
 	void ConfigureStill(unsigned int flags = FLAG_STILL_NONE);
     void ConfigureViewfinder();
+	void SetViewfinderFrameCallback(ViewfinderFrameCallback callback);
 
 	void Teardown();
 	void StartCamera();
@@ -157,6 +160,7 @@ private:
 		std::condition_variable cond_;
 	};
 
+    ViewfinderFrameCallback viewfinder_frame_callback_;
 	void setupCapture();
 	void makeRequests();
 	void queueRequest(CompletedRequest *completed_request);

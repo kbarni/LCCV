@@ -84,7 +84,7 @@ public:
 	uint64_t timeout; // in ms
     unsigned int photo_width, photo_height;
     unsigned int video_width, video_height;
-	bool rawfull;
+	bool rawfull,raw;
 	libcamera::Transform transform;
 	float roi_x, roi_y, roi_width, roi_height;
 	float shutter;
