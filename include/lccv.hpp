@@ -14,6 +14,7 @@ namespace lccv {
 class PiCamera {
 public:
     PiCamera();
+    PiCamera(uint32_t id);
     ~PiCamera();
 
     Options *options;
@@ -33,8 +34,8 @@ public:
 
 protected:
     void run();
-protected:
-    LibcameraApp *app;
+
+	std::unique_ptr<LibcameraApp> app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
     static void *videoThreadFunc(void *p);
     pthread_t videothread;

@@ -5,11 +5,13 @@
 using namespace cv;
 using namespace lccv;
 
-PiCamera::PiCamera()
-{
-    app = new LibcameraApp(std::make_unique<Options>());
+PiCamera::PiCamera() : PiCamera(0) {}
+
+PiCamera::PiCamera(uint32_t id) {
+	app = std::make_unique<LibcameraApp>(std::make_unique<Options>());
     options = static_cast<Options *>(app->GetOptions());
     still_flags = LibcameraApp::FLAG_STILL_NONE;
+	options->camera = id;
     options->photo_width = 4056;
     options->photo_height = 3040;
     options->video_width = 640;
@@ -29,17 +31,15 @@ PiCamera::PiCamera()
     camerastarted=false;
 }
 
-PiCamera::~PiCamera()
-{
-    delete app;
-}
+PiCamera::~PiCamera() {}
 
 void PiCamera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
 {
     unsigned int w, h, stride;
     libcamera::Stream *stream = app->StillStream();
 	app->StreamDimensions(stream, &w, &h, &stride);
-    const std::vector<libcamera::Span<uint8_t>> mem = app->Mmap(payload->buffers[stream]);
+    const std::vector<libcamera::Span<uint8_t>> mem =
+			app->Mmap(payload->buffers[stream]);
     frame.create(h,w,CV_8UC3);
     uint ls = w*3;
     uint8_t *ptr = (uint8_t *)mem[0].data();
