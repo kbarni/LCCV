@@ -29,24 +29,23 @@ std::string const &LibcameraApp::CameraId() const
 	return camera_->id();
 }
 
+uint32_t LibcameraApp::GetNumberCameras() {
+	return getCameraManager()->cameras().size();
+}
+
 void LibcameraApp::OpenCamera()
 {
 
 	if (options_->verbose)
 		std::cerr << "Opening camera..." << std::endl;
 
-	camera_manager_ = std::make_unique<CameraManager>();
-	int ret = camera_manager_->start();
-	if (ret)
-		throw std::runtime_error("camera manager failed to start, code " + std::to_string(-ret));
-
-	if (camera_manager_->cameras().size() == 0)
+	if (getCameraManager()->cameras().size() == 0)
 		throw std::runtime_error("no cameras available");
-	if (options_->camera >= camera_manager_->cameras().size())
+	if (options_->camera >= getCameraManager()->cameras().size())
 		throw std::runtime_error("selected camera is not available");
 
-	std::string const &cam_id = camera_manager_->cameras()[options_->camera]->id();
-	camera_ = camera_manager_->get(cam_id);
+	std::string const &cam_id = getCameraManager()->cameras()[options_->camera]->id();
+	camera_ = getCameraManager()->get(cam_id);
 	if (!camera_)
 		throw std::runtime_error("failed to find camera " + cam_id);
 
@@ -66,8 +65,6 @@ void LibcameraApp::CloseCamera()
 	camera_acquired_ = false;
 
 	camera_.reset();
-
-	camera_manager_.reset();
 
 	if (options_->verbose && !options_->help)
 		std::cerr << "Camera closed" << std::endl;
