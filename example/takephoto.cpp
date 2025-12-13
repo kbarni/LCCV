@@ -1,24 +1,40 @@
 #include <lccv.hpp>
 #include <opencv2/opencv.hpp>
+#include <unistd.h>
+
+void viewfinder_callback(cv::Mat &frame)
+{
+    std::cout<<"*";
+    cv::imshow("Viewfinder", frame);
+    cv::waitKey(1);
+}
 
 int main()
 {
     cv::Mat image;
     lccv::PiCamera cam;
-    //cam.options->width=4056;
-    //cam.options->height=3040;
-    cam.options->photo_width=2028;
-    cam.options->photo_height=1520;
-    cam.options->verbose=true;
-    cv::namedWindow("Image",cv::WINDOW_NORMAL);
-    for(int i=0;i<100;i++){
-        std::cout<<i<<std::endl;
-        if(!cam.capturePhoto(image)){
-            std::cout<<"Camera error"<<std::endl;
+    cam.options->photo_width = 2028;
+    cam.options->photo_height = 1520;
+    cam.options->verbose = true;
+
+    cv::namedWindow("Viewfinder", cv::WINDOW_NORMAL);
+    cam.startPhoto(viewfinder_callback);
+
+    for (int i = 0; i < 10; i++)
+    {
+        std::cout << "Capturing photo " << i << std::endl;
+        if (!cam.capturePhoto(image))
+        {
+            std::cout << "Camera error" << std::endl;
         }
-        cv::imshow("Image",image);
-        cv::waitKey(30);
+        else
+        {
+            cv::imshow("Photo", image);
+            cv::waitKey(1000);
+        }
+        sleep(5);
     }
-    cv::waitKey();
-    cv::destroyWindow("Image");
+
+    cam.stopPhoto();
+    cv::destroyAllWindows();
 }

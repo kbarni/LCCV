@@ -75,43 +75,38 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 	if (options_->verbose)
 		std::cerr << "Configuring still capture..." << std::endl;
 
-	// Always request a raw stream as this forces the full resolution capture mode.
-	// (options_->mode can override the choice of camera mode, however.)
-	StreamRoles stream_roles = { StreamRole::StillCapture, StreamRole::Raw };
+	StreamRoles stream_roles = { StreamRole::StillCapture, StreamRole::Viewfinder };
 	configuration_ = camera_->generateConfiguration(stream_roles);
 	if (!configuration_)
 		throw std::runtime_error("failed to generate still capture configuration");
 
-	// Now we get to override any of the default settings from the options_->
 	if (flags & FLAG_STILL_BGR)
 		configuration_->at(0).pixelFormat = libcamera::formats::BGR888;
 	else if (flags & FLAG_STILL_RGB)
 		configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
 	else
 		configuration_->at(0).pixelFormat = libcamera::formats::YUV420;
+
 	if ((flags & FLAG_STILL_BUFFER_MASK) == FLAG_STILL_DOUBLE_BUFFER)
 		configuration_->at(0).bufferCount = 2;
 	else if ((flags & FLAG_STILL_BUFFER_MASK) == FLAG_STILL_TRIPLE_BUFFER)
 		configuration_->at(0).bufferCount = 3;
-    if (options_->photo_width)
-        configuration_->at(0).size.width = options_->photo_width;
-    if (options_->photo_height)
-        configuration_->at(0).size.height = options_->photo_height;
 
-//    configuration_->transform = options_->transform;
+	if (options_->photo_width)
+		configuration_->at(0).size.width = options_->photo_width;
+	if (options_->photo_height)
+		configuration_->at(0).size.height = options_->photo_height;
 
-	//if (have_raw_stream && !options_->rawfull)
-	{
-		configuration_->at(1).size.width = configuration_->at(0).size.width;
-		configuration_->at(1).size.height = configuration_->at(0).size.height;
-	}
-	configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
+	configuration_->at(1).pixelFormat = libcamera::formats::RGB888;
+	configuration_->at(1).size.width = options_->video_width;
+	configuration_->at(1).size.height = options_->video_height;
+	configuration_->at(1).bufferCount = 4;
 
 	configureDenoise(options_->denoise == "auto" ? "cdn_hq" : options_->denoise);
 	setupCapture();
 
 	streams_["still"] = configuration_->at(0).stream();
-	streams_["raw"] = configuration_->at(1).stream();
+	streams_["viewfinder"] = configuration_->at(1).stream();
 
 	if (options_->verbose)
 		std::cerr << "Still capture setup complete" << std::endl;
@@ -127,13 +122,10 @@ void LibcameraApp::ConfigureViewfinder()
     if (!configuration_)
         throw std::runtime_error("failed to generate viewfinder configuration");
 
-    // Now we get to override any of the default settings from the options_->
     configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
     configuration_->at(0).size.width = options_->video_width;
     configuration_->at(0).size.height = options_->video_height;
     configuration_->at(0).bufferCount = 4;
-
-//    configuration_->transform = options_->transform;
 
     configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
     setupCapture();
@@ -151,8 +143,6 @@ void LibcameraApp::Teardown()
 
 	for (auto &iter : mapped_buffers_)
 	{
-		// assert(iter.first->planes().size() == iter.second.size());
-		// for (unsigned i = 0; i < iter.first->planes().size(); i++)
 		for (auto &span : iter.second)
 			munmap(span.data(), span.size());
 	}
@@ -170,11 +160,8 @@ void LibcameraApp::Teardown()
 
 void LibcameraApp::StartCamera()
 {
-	// This makes all the Request objects that we shall need.
 	makeRequests();
 
-	// Build a list of initial controls that we must set in the camera before starting it.
-	// We don't overwrite anything the application may have set before calling us.
 	if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
 	{
 		Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
@@ -189,9 +176,6 @@ void LibcameraApp::StartCamera()
 		controls_.set(controls::ScalerCrop, crop);
 	}
 
-	// Framerate is a bit weird. If it was set programmatically, we go with that, but
-	// otherwise it applies only to preview/video modes. For stills capture we set it
-	// as long as possible so that we get whatever the exposure profile wants.
 	if (!controls_.get(controls::FrameDurationLimits))
 	{
 		if (StillStream())
@@ -247,7 +231,6 @@ void LibcameraApp::StartCamera()
 void LibcameraApp::StopCamera()
 {
 	{
-		// We don't want QueueRequest to run asynchronously while we stop the camera.
 		std::lock_guard<std::mutex> lock(camera_stop_mutex_);
 		if (camera_started_)
 		{
@@ -261,18 +244,17 @@ void LibcameraApp::StopCamera()
 	if (camera_)
 		camera_->requestCompleted.disconnect(this, &LibcameraApp::requestComplete);
 
-	// An application might be holding a CompletedRequest, so queueRequest will get
-	// called to delete it later, but we need to know not to try and re-queue it.
 	completed_requests_.clear();
 
 	msg_queue_.Clear();
+	request_queue_.Clear();
 
 	while (!free_requests_.empty())
 		free_requests_.pop();
 
 	requests_.clear();
 
-	controls_.clear(); // no need for mutex here
+	controls_.clear();
 
 	if (options_->verbose && !options_->help)
 		std::cerr << "Camera stopped!" << std::endl;
@@ -299,6 +281,11 @@ LibcameraApp::Msg LibcameraApp::Wait()
 	return msg_queue_.Wait();
 }
 
+void LibcameraApp::QueueRequest(RequestType type)
+{
+	request_queue_.Post(type);
+}
+
 void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 {
 	BufferMap buffers(std::move(completed_request->buffers));
@@ -306,14 +293,10 @@ void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 	Request *request = completed_request->request;
 	assert(request);
 
-	// This function may run asynchronously so needs protection from the
-	// camera stopping at the same time.
 	std::lock_guard<std::mutex> stop_lock(camera_stop_mutex_);
 	if (!camera_started_)
 		return;
 
-	// An application could be holding a CompletedRequest while it stops and re-starts
-	// the camera, after which we don't want to queue another request now.
 	{
 		std::lock_guard<std::mutex> lock(completed_requests_mutex_);
 		auto it = completed_requests_.find(completed_request);
@@ -416,8 +399,6 @@ void LibcameraApp::StreamDimensions(Stream const *stream, unsigned int *w, unsig
 
 void LibcameraApp::setupCapture()
 {
-	// First finish setting up the configuration.
-
 	CameraConfiguration::Status validation = configuration_->validate();
 	if (validation == CameraConfiguration::Invalid)
 		throw std::runtime_error("failed to valid stream configurations");
@@ -429,8 +410,6 @@ void LibcameraApp::setupCapture()
 	if (options_->verbose)
 		std::cerr << "Camera streams configured" << std::endl;
 
-	// Next allocate all the buffers we need, mmap them and store them on a free list.
-
 	allocator_ = new FrameBufferAllocator(camera_);
 	for (StreamConfiguration &config : *configuration_)
 	{
@@ -441,12 +420,10 @@ void LibcameraApp::setupCapture()
 
 		for (const std::unique_ptr<FrameBuffer> &buffer : allocator_->buffers(stream))
 		{
-			// "Single plane" buffers appear as multi-plane here, but we can spot them because then
-			// planes all share the same fd. We accumulate them so as to mmap the buffer only once.
 			size_t buffer_size = 0;
 			for (unsigned i = 0; i < buffer->planes().size(); i++)
 			{
-				const FrameBuffer::Plane &plane = buffer->planes()[i];
+				const FrameBuffer::Plane plane = buffer->planes()[i];
 				buffer_size += plane.length;
 				if (i == buffer->planes().size() - 1 || plane.fd.get() != buffer->planes()[i + 1].fd.get())
 				{
@@ -461,8 +438,6 @@ void LibcameraApp::setupCapture()
 	}
 	if (options_->verbose)
 		std::cerr << "Buffers allocated and mapped" << std::endl;
-
-	// The requests will be made when StartCamera() is called.
 }
 
 void LibcameraApp::makeRequests()
@@ -470,31 +445,36 @@ void LibcameraApp::makeRequests()
 	auto free_buffers(frame_buffers_);
 	while (true)
 	{
-		for (StreamConfiguration &config : *configuration_)
-		{
-			Stream *stream = config.stream();
-			if (stream == configuration_->at(0).stream())
-			{
-				if (free_buffers[stream].empty())
-				{
-					if (options_->verbose)
-						std::cerr << "Requests created" << std::endl;
-					return;
-				}
-				std::unique_ptr<Request> request = camera_->createRequest();
-				if (!request)
-					throw std::runtime_error("failed to make request");
-				requests_.push_back(std::move(request));
-			}
-			else if (free_buffers[stream].empty())
-				throw std::runtime_error("concurrent streams need matching numbers of buffers");
+		RequestType type = request_queue_.Wait();
+		if (type == RequestType::None)
+			break;
 
-			FrameBuffer *buffer = free_buffers[stream].front();
-			free_buffers[stream].pop();
-			if (requests_.back()->addBuffer(stream, buffer) < 0)
+		std::unique_ptr<Request> request = camera_->createRequest();
+		if (!request)
+			throw std::runtime_error("failed to make request");
+
+		if (type == RequestType::Still)
+		{
+			Stream *stream = streams_["still"];
+			if (free_buffers[stream].empty())
+				throw std::runtime_error("no buffer for still stream");
+			if (request->addBuffer(stream, free_buffers[stream].front()) < 0)
 				throw std::runtime_error("failed to add buffer to request");
+			free_buffers[stream].pop();
 		}
+		else if (type == RequestType::Video || type == RequestType::Viewfinder)
+		{
+			Stream *stream = streams_["viewfinder"];
+			if (free_buffers[stream].empty())
+				throw std::runtime_error("no buffer for viewfinder stream");
+			if (request->addBuffer(stream, free_buffers[stream].front()) < 0)
+				throw std::runtime_error("failed to add buffer to request");
+			free_buffers[stream].pop();
+		}
+		requests_.push_back(std::move(request));
 	}
+	if (options_->verbose)
+		std::cerr << "Requests created" << std::endl;
 }
 
 void LibcameraApp::requestComplete(Request *request)
@@ -509,7 +489,6 @@ void LibcameraApp::requestComplete(Request *request)
 		completed_requests_.insert(r);
 	}
 
-	// We calculate the instantaneous framerate in case anyone wants it.
 	uint64_t timestamp = payload->buffers.begin()->second->metadata().timestamp;
 	if (last_timestamp_ == 0 || last_timestamp_ == timestamp)
 		payload->framerate = 0;
@@ -517,6 +496,7 @@ void LibcameraApp::requestComplete(Request *request)
 		payload->framerate = 1e9 / (timestamp - last_timestamp_);
 	last_timestamp_ = timestamp;
 
+    payload->stream = const_cast<libcamera::Stream *>(request->buffers().begin()->first);
     msg_queue_.Post(Msg(MsgType::RequestComplete, std::move(payload)));
 }
 

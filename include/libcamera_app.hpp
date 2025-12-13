@@ -56,6 +56,13 @@ public:
 	using BufferMap = Request::BufferMap;
 	using Size = libcamera::Size;
 	using Rectangle = libcamera::Rectangle;
+	enum class RequestType
+	{
+		None,
+		Still,
+		Video,
+		Viewfinder
+	};
 	enum class MsgType
 	{
 		RequestComplete,
@@ -103,10 +110,11 @@ public:
 	void StartCamera();
 	void StopCamera();
 
-    void ApplyRoiSettings();
+	void ApplyRoiSettings();
 
 	Msg Wait();
 	void PostMessage(MsgType &t, MsgPayload &p);
+	void QueueRequest(RequestType type);
 
 	Stream *GetStream(std::string const &name, unsigned int *w = nullptr, unsigned int *h = nullptr,
 					  unsigned int *stride = nullptr) const;
@@ -191,6 +199,7 @@ private:
 	bool camera_started_ = false;
 	std::mutex camera_stop_mutex_;
 	MessageQueue<Msg> msg_queue_;
+	MessageQueue<RequestType> request_queue_;
 	// For setting camera controls.
 	std::mutex control_mutex_;
 	ControlList controls_;
@@ -393,4 +402,5 @@ struct CompletedRequest
 	Request *request;
 	float framerate;
 	Metadata post_process_metadata;
+	libcamera::Stream *stream;
 };
