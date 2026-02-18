@@ -236,7 +236,7 @@ struct FrameInfo
         auto ae = ctrls.get(libcamera::controls::AeState);
         if (ae)
             aelock = (*ae == libcamera::controls::AeStateSearching);
-#endif//LIBCAMERA_VERSION_MINOR == 4
+#endif//LIBCAMERA_VERSION_MINOR
 #endif//LIBCAMERA_VERSION_MAJOR == 0
 	}
 
