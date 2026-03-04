@@ -30,6 +30,7 @@
 #include <libcamera/formats.h>
 #include <libcamera/framebuffer_allocator.h>
 #include <libcamera/property_ids.h>
+#include <libcamera/version.h>
 
 class Options;
 struct CompletedRequest;
@@ -226,9 +227,15 @@ struct FrameInfo
 		if (fom)
 			focus = *fom;
 
-		auto ae = ctrls.get(libcamera::controls::AeState);
-		if (ae)
-			aelock = (*ae == libcamera::controls::AeStateSearching);
+#if LIBCAMERA_VERSION_MINOR == 4
+        auto ae = ctrls.get(libcamera::controls::draft::AeState);
+        if (ae)
+            aelock = (*ae == libcamera::controls::draft::AeStateLocked);
+#else
+        auto ae = ctrls.get(libcamera::controls::AeState);
+        if (ae)
+            aelock = (*ae == libcamera::controls::AeStateSearching);
+#endif//LIBCAMERA_VERSION_MINOR
 	}
 
 	std::string ToString(std::string &info_string) const
