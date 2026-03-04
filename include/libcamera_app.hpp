@@ -227,17 +227,15 @@ struct FrameInfo
 		if (fom)
 			focus = *fom;
 
-#if LIBCAMERA_VERSION_MAJOR == 0
 #if LIBCAMERA_VERSION_MINOR == 4
         auto ae = ctrls.get(libcamera::controls::draft::AeState);
         if (ae)
             aelock = (*ae == libcamera::controls::draft::AeStateLocked);
-#elif LIBCAMERA_VERSION_MINOR == 5
+#else
         auto ae = ctrls.get(libcamera::controls::AeState);
         if (ae)
             aelock = (*ae == libcamera::controls::AeStateSearching);
 #endif//LIBCAMERA_VERSION_MINOR
-#endif//LIBCAMERA_VERSION_MAJOR == 0
 	}
 
 	std::string ToString(std::string &info_string) const
