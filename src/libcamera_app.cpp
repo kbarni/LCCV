@@ -331,7 +331,12 @@ void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 
 	{
 		std::lock_guard<std::mutex> lock(control_mutex_);
+#if LIBCAMERA_VERSION_MINOR < 7
 		request->controls() = std::move(controls_);
+#else
+		request->controls().merge(controls_, ControlList::MergePolicy::OverwriteExisting);
+		controls_.clear();
+#endif//LIBCAMERA_VERSION_MINOR
 	}
 
 	if (camera_->queueRequest(request) < 0)
