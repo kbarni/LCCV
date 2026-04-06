@@ -1,5 +1,4 @@
 #include "lccv.hpp"
-#include <libcamera/libcamera/stream.h>
 #include <time.h>
 
 using namespace cv;
