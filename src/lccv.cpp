@@ -1,5 +1,4 @@
 #include "lccv.hpp"
-#include <time.h>
 
 using namespace cv;
 using namespace lccv;
@@ -14,13 +13,12 @@ PiCamera::PiCamera()
     options->setWhiteBalance(WhiteBalance_Modes::WB_AUTO);
     still_flags |= LibcameraApp::FLAG_STILL_RGB;
     running.store(false, std::memory_order_release);
-    frameready.store(false, std::memory_order_release);
     camerastarted = false;
 }
 
 PiCamera::~PiCamera()
 {
-    // app is a unique_ptr — cleaned up automatically
+    // unique_ptr members cleaned up automatically
 }
 
 void PiCamera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
@@ -94,93 +92,93 @@ bool PiCamera::startVideo()
 {
     if (camerastarted) stopPhoto();
     if (running.load(std::memory_order_relaxed)) {
-        std::cerr << "Video thread already running";
+        std::cerr << "Video thread already running" << std::endl;
         return false;
     }
-    frameready.store(false, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        frame_ready_ = false;
+    }
     app->OpenCamera();
     app->ConfigureViewfinder();
     app->StartCamera();
 
-    int ret = pthread_create(&videothread, NULL, &videoThreadFunc, this);
-    if (ret != 0) {
-        std::cerr << "Error starting video thread";
-        return false;
-    }
+    running.store(true, std::memory_order_release);
+    video_thread_ = std::thread(&PiCamera::videoThread, this);
     return true;
 }
 
 void PiCamera::stopVideo()
 {
-    if (!running) return;
+    if (!running.load(std::memory_order_acquire)) return;
 
     running.store(false, std::memory_order_release);
+    frame_cv_.notify_all(); // unblock any waiting getVideoFrame call
 
-    void *status;
-    int ret = pthread_join(videothread, &status);
-    if (ret < 0)
-        std::cerr << "Error joining thread" << std::endl;
+    if (video_thread_.joinable())
+        video_thread_.join();
 
     app->StopCamera();
     app->Teardown();
     app->CloseCamera();
-    frameready.store(false, std::memory_order_release);
+
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    frame_ready_ = false;
 }
 
 bool PiCamera::getVideoFrame(cv::Mat &frame, unsigned int timeout)
 {
     if (!running.load(std::memory_order_acquire)) return false;
-    auto start_time = std::chrono::high_resolution_clock::now();
-    bool timeout_reached = false;
-    timespec req;
-    req.tv_sec = 0;
-    req.tv_nsec = 1000000; // 1ms
-    while ((!frameready.load(std::memory_order_acquire)) && (!timeout_reached)) {
-        nanosleep(&req, NULL);
-        timeout_reached = (std::chrono::high_resolution_clock::now() - start_time > std::chrono::milliseconds(timeout));
-    }
-    if (frameready.load(std::memory_order_acquire)) {
-        frame.create(vh, vw, CV_8UC3);
-        uint ls = vw * 3;
-        std::lock_guard<std::mutex> lock(mtx);
-        uint8_t *ptr = framebuffer.data();
-        for (unsigned int i = 0; i < vh; i++, ptr += vstr)
-            memcpy(frame.ptr(i), ptr, ls);
-        frameready.store(false, std::memory_order_release);
-        return true;
-    }
-    return false;
+
+    std::unique_lock<std::mutex> lock(frame_mutex_);
+    bool got_frame = frame_cv_.wait_for(lock,
+        std::chrono::milliseconds(timeout),
+        [this] { return frame_ready_ || !running.load(std::memory_order_relaxed); });
+
+    if (!got_frame || !frame_ready_)
+        return false;
+
+    frame.create(vh, vw, CV_8UC3);
+    uint ls = vw * 3;
+    const uint8_t *ptr = front_buffer_.data();
+    for (unsigned int i = 0; i < vh; i++, ptr += vstr)
+        memcpy(frame.ptr(i), ptr, ls);
+
+    frame_ready_ = false;
+    return true;
 }
 
-void *PiCamera::videoThreadFunc(void *p)
+void PiCamera::videoThread()
 {
-    PiCamera *t = (PiCamera *)p;
-    t->running.store(true, std::memory_order_release);
-    libcamera::Stream *stream = t->app->ViewfinderStream(&t->vw, &t->vh, &t->vstr);
-    int buffersize = t->vh * t->vstr;
-    t->framebuffer.resize(buffersize);
-    std::vector<libcamera::Span<uint8_t>> mem;
+    libcamera::Stream *stream = app->ViewfinderStream(&vw, &vh, &vstr);
+    size_t buffersize = (size_t)vh * vstr;
+    back_buffer_.resize(buffersize);
+    front_buffer_.resize(buffersize);
 
-    while (t->running.load(std::memory_order_acquire)) {
-        LibcameraApp::Msg msg = t->app->Wait();
+    while (running.load(std::memory_order_acquire)) {
+        LibcameraApp::Msg msg = app->Wait();
         if (msg.type == LibcameraApp::MsgType::Quit) {
             std::cerr << "Quit message received" << std::endl;
-            t->running.store(false, std::memory_order_release);
+            running.store(false, std::memory_order_release);
             break;
-        } else if (msg.type != LibcameraApp::MsgType::RequestComplete) {
+        }
+        if (msg.type != LibcameraApp::MsgType::RequestComplete) {
             std::cerr << "Unrecognised message in video thread" << std::endl;
             break;
         }
 
         CompletedRequestPtr payload = std::get<CompletedRequestPtr>(msg.payload);
-        mem = t->app->Mmap(payload->buffers[stream]);
+        auto mem = app->Mmap(payload->buffers[stream]);
+        memcpy(back_buffer_.data(), mem[0].data(), buffersize);
+
         {
-            std::lock_guard<std::mutex> lock(t->mtx);
-            memcpy(t->framebuffer.data(), mem[0].data(), buffersize);
+            std::lock_guard<std::mutex> lock(frame_mutex_);
+            std::swap(front_buffer_, back_buffer_);
+            frame_ready_ = true;
         }
-        t->frameready.store(true, std::memory_order_release);
+        frame_cv_.notify_one();
     }
-    return NULL;
+    frame_cv_.notify_all(); // wake up any blocked getVideoFrame on exit
 }
 
 void PiCamera::ApplyZoomOptions()

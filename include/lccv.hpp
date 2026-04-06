@@ -3,8 +3,9 @@
 
 #include <mutex>
 #include <atomic>
+#include <thread>
+#include <condition_variable>
 #include <vector>
-#include <pthread.h>
 #include <opencv2/opencv.hpp>
 
 #include "libcamera_app.hpp"
@@ -33,16 +34,23 @@ public:
     void ApplyZoomOptions();
 
 protected:
-    void run();
-protected:
     std::unique_ptr<LibcameraApp> app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
-    static void *videoThreadFunc(void *p);
-    pthread_t videothread;
+    void videoThread();
+
     unsigned int still_flags;
-    unsigned int vw,vh,vstr;
-    std::atomic<bool> running,frameready;
-    std::vector<uint8_t> framebuffer;
+    unsigned int vw, vh, vstr;
+
+    // video frame delivery
+    std::vector<uint8_t> front_buffer_;
+    std::vector<uint8_t> back_buffer_;
+    std::mutex frame_mutex_;
+    std::condition_variable frame_cv_;
+    bool frame_ready_ = false;
+
+    std::thread video_thread_;
+    std::atomic<bool> running{false};
+
     std::mutex mtx;
     bool camerastarted;
 };
