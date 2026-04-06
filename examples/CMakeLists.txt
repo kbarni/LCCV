@@ -1,15 +1,24 @@
-project(takephoto)
-cmake_minimum_required(VERSION 3.0.0)
+# Examples are built as part of the main project when BUILD_EXAMPLES=ON.
+# They can also be built standalone after installing the library:
+#   cmake -Dlccv_DIR=<install_prefix>/lib/cmake/lccv ..
 
-set (CMAKE_CXX_STANDARD 17)
+cmake_minimum_required(VERSION 3.16)
+
+if(NOT TARGET liblccv)
+    # Standalone build — find the installed library
+    project(lccv_examples CXX)
+    find_package(lccv REQUIRED)
+    set(LCCV_TARGET lccv::liblccv)
+else()
+    # Part of the main build — use the build-tree target directly
+    set(LCCV_TARGET liblccv)
+endif()
 
 find_package(OpenCV REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBCAMERA REQUIRED libcamera)
 
-include_directories(${LIBCAMERA_INCLUDE_DIRS} ${OPENCV_INCLUDE_DIRS})
-add_executable(takephoto takephoto.cpp)
-add_executable(takevideo takevideo.cpp)
-
-target_link_libraries(takephoto -llccv ${OpenCV_LIBS})
-target_link_libraries(takevideo -llccv ${OpenCV_LIBS})
+foreach(example takephoto takevideo viewfinder)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${example}.cpp)
+        add_executable(${example} ${example}.cpp)
+        target_link_libraries(${example} PRIVATE ${LCCV_TARGET} ${OpenCV_LIBS})
+    endif()
+endforeach()

@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(PkgConfig REQUIRED)
+find_dependency(OpenCV REQUIRED)
+pkg_check_modules(LIBCAMERA REQUIRED libcamera)
+
+include("${CMAKE_CURRENT_LIST_DIR}/lccvTargets.cmake")
+
+check_required_components(lccv)
