@@ -94,13 +94,16 @@ public:
 	void CloseCamera();
 
 	void ConfigureStill(unsigned int flags = FLAG_STILL_NONE);
-    void ConfigureViewfinder();
+	void ConfigureViewfinder();
+	void ConfigureStillWithViewfinder(unsigned int flags = FLAG_STILL_NONE);
 
 	void Teardown();
 	void StartCamera();
 	void StopCamera();
 
-    void ApplyRoiSettings();
+	// Apply zoom/pan from options as a ScalerCrop control immediately.
+	// Safe to call while the camera is running.
+	void ApplyZoom(float zoom, float pan_x, float pan_y);
 
 	Msg Wait();
 	void PostMessage(MsgType &t, MsgPayload &p);

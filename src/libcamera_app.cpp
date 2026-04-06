@@ -145,6 +145,54 @@ void LibcameraApp::ConfigureViewfinder()
         std::cerr << "Viewfinder setup complete" << std::endl;
 }
 
+void LibcameraApp::ConfigureStillWithViewfinder(unsigned int flags)
+{
+	if (options_->verbose)
+		std::cerr << "Configuring still + viewfinder..." << std::endl;
+
+	StreamRoles stream_roles = { StreamRole::StillCapture, StreamRole::Raw, StreamRole::Viewfinder };
+	configuration_ = camera_->generateConfiguration(stream_roles);
+	if (!configuration_)
+		throw std::runtime_error("failed to generate still+viewfinder configuration");
+
+	// Still stream (index 0)
+	if (flags & FLAG_STILL_BGR)
+		configuration_->at(0).pixelFormat = libcamera::formats::BGR888;
+	else if (flags & FLAG_STILL_RGB)
+		configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
+	else
+		configuration_->at(0).pixelFormat = libcamera::formats::YUV420;
+	if ((flags & FLAG_STILL_BUFFER_MASK) == FLAG_STILL_DOUBLE_BUFFER)
+		configuration_->at(0).bufferCount = 2;
+	else if ((flags & FLAG_STILL_BUFFER_MASK) == FLAG_STILL_TRIPLE_BUFFER)
+		configuration_->at(0).bufferCount = 3;
+	if (options_->photo_width)
+		configuration_->at(0).size.width = options_->photo_width;
+	if (options_->photo_height)
+		configuration_->at(0).size.height = options_->photo_height;
+
+	// Raw stream (index 1) — match still dimensions
+	configuration_->at(1).size.width  = configuration_->at(0).size.width;
+	configuration_->at(1).size.height = configuration_->at(0).size.height;
+	configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
+
+	// Viewfinder stream (index 2)
+	configuration_->at(2).pixelFormat = libcamera::formats::RGB888;
+	configuration_->at(2).size.width  = options_->viewfinder_width;
+	configuration_->at(2).size.height = options_->viewfinder_height;
+	configuration_->at(2).bufferCount = 4;
+
+	configureDenoise(options_->denoise == "auto" ? "cdn_hq" : options_->denoise);
+	setupCapture();
+
+	streams_["still"]      = configuration_->at(0).stream();
+	streams_["raw"]        = configuration_->at(1).stream();
+	streams_["viewfinder"] = configuration_->at(2).stream();
+
+	if (options_->verbose)
+		std::cerr << "Still + viewfinder setup complete" << std::endl;
+}
+
 void LibcameraApp::Teardown()
 {
 	if (options_->verbose)
@@ -176,17 +224,7 @@ void LibcameraApp::StartCamera()
 	// Build a list of initial controls that we must set in the camera before starting it.
 	// We don't overwrite anything the application may have set before calling us.
 	if (!controls_.get(controls::ScalerCrop) && options_->zoom > 1.0f)
-	{
-		Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
-		int w = sensor_area.width  / options_->zoom;
-		int h = sensor_area.height / options_->zoom;
-		int x = sensor_area.x + (sensor_area.width  - w) * options_->pan_x;
-		int y = sensor_area.y + (sensor_area.height - h) * options_->pan_y;
-		Rectangle crop(x, y, w, h);
-		if (options_->verbose)
-			std::cerr << "Using crop " << crop.toString() << std::endl;
-		controls_.set(controls::ScalerCrop, crop);
-	}
+		ApplyZoom(options_->zoom, options_->pan_x, options_->pan_y);
 
 	// Framerate is a bit weird. If it was set programmatically, we go with that, but
 	// otherwise it applies only to preview/video modes. For stills capture we set it
@@ -277,18 +315,26 @@ void LibcameraApp::StopCamera()
 		std::cerr << "Camera stopped!" << std::endl;
 }
 
-void LibcameraApp::ApplyRoiSettings()
+void LibcameraApp::ApplyZoom(float zoom, float pan_x, float pan_y)
 {
-    if (options_->zoom <= 1.0f)
+    if (zoom <= 1.0f) {
+        // Reset to full sensor
+        std::lock_guard<std::mutex> lock(control_mutex_);
+        Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
+        controls_.set(controls::ScalerCrop, sensor_area);
         return;
+    }
     Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
-    int w = sensor_area.width  / options_->zoom;
-    int h = sensor_area.height / options_->zoom;
-    int x = sensor_area.x + (sensor_area.width  - w) * options_->pan_x;
-    int y = sensor_area.y + (sensor_area.height - h) * options_->pan_y;
+    int w = sensor_area.width  / zoom;
+    int h = sensor_area.height / zoom;
+    int x = sensor_area.x + (int)((sensor_area.width  - w) * pan_x);
+    int y = sensor_area.y + (int)((sensor_area.height - h) * pan_y);
+    // Clamp to sensor bounds
+    x = std::max(sensor_area.x, std::min(x, sensor_area.x + (int)sensor_area.width  - w));
+    y = std::max(sensor_area.y, std::min(y, sensor_area.y + (int)sensor_area.height - h));
     Rectangle crop(x, y, w, h);
     if (options_->verbose)
-        std::cerr << "Applying zoom crop " << crop.toString() << std::endl;
+        std::cerr << "Applying zoom " << zoom << " crop " << crop.toString() << std::endl;
     std::lock_guard<std::mutex> lock(control_mutex_);
     controls_.set(controls::ScalerCrop, crop);
 }

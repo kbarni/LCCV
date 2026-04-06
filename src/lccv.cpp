@@ -209,5 +209,5 @@ void Camera::videoThread()
 
 void Camera::ApplyZoomOptions()
 {
-    app_->ApplyRoiSettings();
+    app_->ApplyZoom(options->zoom, options->pan_x, options->pan_y);
 }
