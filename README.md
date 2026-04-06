@@ -53,7 +53,7 @@ Using the library
 
 Please refer to the [wiki](https://github.com/kbarni/LCCV/wiki)
 
-Also see some example code in the `examples` folder.
+Also see some example code in the `examples/` folder.
 
 License
 -------
