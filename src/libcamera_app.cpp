@@ -69,7 +69,7 @@ void LibcameraApp::CloseCamera()
 
 	camera_manager_.reset();
 
-	if (options_->verbose && !options_->help)
+	if (options_->verbose)
 		std::cerr << "Camera closed" << std::endl;
 }
 
@@ -149,7 +149,7 @@ void LibcameraApp::ConfigureViewfinder()
 
 void LibcameraApp::Teardown()
 {
-	if (options_->verbose && !options_->help)
+	if (options_->verbose)
 		std::cerr << "Tearing down requests, buffers and configuration" << std::endl;
 
 	for (auto &iter : mapped_buffers_)
@@ -277,7 +277,7 @@ void LibcameraApp::StopCamera()
 
 	controls_.clear(); // no need for mutex here
 
-	if (options_->verbose && !options_->help)
+	if (options_->verbose)
 		std::cerr << "Camera stopped!" << std::endl;
 }
 

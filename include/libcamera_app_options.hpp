@@ -38,73 +38,70 @@ enum WhiteBalance_Modes {
     WB_INDOOR = libcamera::controls::AwbIndoor,
     WB_DAYLIGHT = libcamera::controls::AwbDaylight,
     WB_CLOUDY = libcamera::controls::AwbCloudy,
-    WB_CUSTOM = libcamera::controls::AwbAuto
+    WB_CUSTOM = libcamera::controls::AwbCustom
 };
 
 class Options
 {
 public:
-	Options()
-	{
-        timeout=1000;
+    Options()
+    {
+        timeout = 1000;
         metering_index = Metering_Modes::METERING_CENTRE;
-        exposure_index=Exposure_Modes::EXPOSURE_NORMAL;
-        awb_index=WhiteBalance_Modes::WB_AUTO;
-        saturation=1.0f;
-        contrast=1.0f;
-        sharpness=1.0f;
-	brightness=0.0f;
-	shutter=0.0f;
-	gain=0.0f;
-	ev=0.0f;
-	roi_x=roi_y=roi_width=roi_height=0;
-	awb_gain_r=awb_gain_b=0;
-        denoise="auto";
-        verbose=false;
-	transform=libcamera::Transform::Identity;
-	camera=0;
-	}
+        exposure_index = Exposure_Modes::EXPOSURE_NORMAL;
+        awb_index = WhiteBalance_Modes::WB_AUTO;
+        saturation = 1.0f;
+        contrast = 1.0f;
+        sharpness = 1.0f;
+        brightness = 0.0f;
+        shutter = 0.0f;
+        gain = 0.0f;
+        ev = 0.0f;
+        awb_gain_r = awb_gain_b = 0;
+        denoise = "auto";
+        verbose = false;
+        transform = libcamera::Transform::Identity;
+        camera = 0;
+        photo_width = 4056;
+        photo_height = 3040;
+        video_width = 1280;
+        video_height = 720;
+        framerate = 30;
+    }
 
-	virtual ~Options() {}
+    virtual ~Options() {}
 
-	virtual void Print() const;
+    virtual void Print() const;
 
-    void setMetering(Metering_Modes meteringmode){metering_index=meteringmode;}
-    void setWhiteBalance(WhiteBalance_Modes wb){awb_index = wb;}
-    void setExposureMode(Exposure_Modes exp){exposure_index = exp;}
+    void setMetering(Metering_Modes meteringmode) { metering_index = meteringmode; }
+    void setWhiteBalance(WhiteBalance_Modes wb) { awb_index = wb; }
+    void setExposureMode(Exposure_Modes exp) { exposure_index = exp; }
 
-    int getExposureMode(){return exposure_index;}
-    int getMeteringMode(){return metering_index;}
-    int getWhiteBalance(){return awb_index;}
+    int getExposureMode() { return exposure_index; }
+    int getMeteringMode() { return metering_index; }
+    int getWhiteBalance() { return awb_index; }
 
-	bool help;
-	bool version;
-	bool list_cameras;
-	bool verbose;
-	uint64_t timeout; // in ms
+    bool verbose;
+    uint64_t timeout; // in ms
     unsigned int photo_width, photo_height;
     unsigned int video_width, video_height;
-	bool rawfull;
-	libcamera::Transform transform;
-	float roi_x, roi_y, roi_width, roi_height;
-	float shutter;
-	float gain;
-	float ev;
-	float awb_gain_r;
-	float awb_gain_b;
-	float brightness;
-	float contrast;
-	float saturation;
-	float sharpness;
-	float framerate;
-	std::string denoise;
-	std::string info_text;
-	unsigned int camera;
+    libcamera::Transform transform;
+    float roi_x, roi_y, roi_width, roi_height;
+    float shutter;
+    float gain;
+    float ev;
+    float awb_gain_r;
+    float awb_gain_b;
+    float brightness;
+    float contrast;
+    float saturation;
+    float sharpness;
+    float framerate;
+    std::string denoise;
+    unsigned int camera;
 
 protected:
-	int metering_index;
-	int exposure_index;
+    int metering_index;
+    int exposure_index;
     int awb_index;
-
-private:
 };
