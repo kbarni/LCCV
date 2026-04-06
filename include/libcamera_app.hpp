@@ -29,7 +29,7 @@
 #include <libcamera/framebuffer_allocator.h>
 #include <libcamera/property_ids.h>
 
-class Options;
+namespace lccv { class Options; }
 struct CompletedRequest;
 using CompletedRequestPtr = std::shared_ptr<CompletedRequest>;
 
@@ -84,10 +84,10 @@ public:
 	static constexpr unsigned int FLAG_VIDEO_RAW = 1; // request raw image stream
 	static constexpr unsigned int FLAG_VIDEO_JPEG_COLOURSPACE = 2; // force JPEG colour space
 
-	LibcameraApp(std::unique_ptr<Options> const opts = nullptr);
+	LibcameraApp(std::unique_ptr<lccv::Options> const opts = nullptr);
 	virtual ~LibcameraApp();
 
-	Options *GetOptions() const { return options_.get(); }
+	lccv::Options *GetOptions() const { return options_.get(); }
 
 	std::string const &CameraId() const;
 	void OpenCamera();
@@ -121,7 +121,7 @@ public:
 	void StreamDimensions(Stream const *stream, unsigned int *w, unsigned int *h, unsigned int *stride) const;
 
 protected:
-	std::unique_ptr<Options> options_;
+	std::unique_ptr<lccv::Options> options_;
 
 private:
 	template <typename T>

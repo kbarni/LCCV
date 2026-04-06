@@ -57,12 +57,10 @@ include(GNUInstallDirs)
 set(SOURCES
     src/lccv.cpp
     src/libcamera_app.cpp
-    src/libcamera_app_options.cpp
 )
 set(HEADERS
     include/lccv.hpp
     include/libcamera_app.hpp
-    include/libcamera_app_options.hpp
 )
 
 add_library(liblccv ${SOURCES} ${HEADERS})
@@ -74,7 +72,7 @@ target_include_directories(liblccv
 )
 
 set_target_properties(liblccv PROPERTIES PREFIX "" IMPORT_PREFIX "")
-target_link_libraries(liblccv pthread ${LIBCAMERA_LINK_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(liblccv ${LIBCAMERA_LINK_LIBRARIES} ${OpenCV_LIBS})
 
 install(TARGETS liblccv 
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} 

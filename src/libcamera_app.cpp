@@ -5,15 +5,13 @@
  * libcamera_app.cpp - base class for libcamera apps.
  */
 
-#include "libcamera_app.hpp"
-#include "libcamera_app_options.hpp"
+#include "lccv.hpp"
 
-LibcameraApp::LibcameraApp(std::unique_ptr<Options> opts)
+LibcameraApp::LibcameraApp(std::unique_ptr<lccv::Options> opts)
 	: options_(std::move(opts)), controls_(controls::controls)
-
 {
 	if (!options_)
-		options_ = std::make_unique<Options>();
+		options_ = std::make_unique<lccv::Options>();
 	controls_.clear();
 }
 
