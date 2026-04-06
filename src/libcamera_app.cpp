@@ -128,13 +128,13 @@ void LibcameraApp::ConfigureViewfinder()
     if (!configuration_)
         throw std::runtime_error("failed to generate viewfinder configuration");
 
-    // Now we get to override any of the default settings from the options_->
-    configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
-    configuration_->at(0).size.width = options_->video_width;
+    configuration_->at(0).pixelFormat =
+        (options_->format == lccv::PixelFormat::BGR)
+        ? libcamera::formats::BGR888
+        : libcamera::formats::RGB888;
+    configuration_->at(0).size.width  = options_->video_width;
     configuration_->at(0).size.height = options_->video_height;
     configuration_->at(0).bufferCount = 4;
-
-//    configuration_->transform = options_->transform;
 
     configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
     setupCapture();
@@ -177,7 +177,10 @@ void LibcameraApp::ConfigureStillWithViewfinder(unsigned int flags)
 	configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
 
 	// Viewfinder stream (index 2)
-	configuration_->at(2).pixelFormat = libcamera::formats::RGB888;
+	configuration_->at(2).pixelFormat =
+		(options_->format == lccv::PixelFormat::BGR)
+		? libcamera::formats::BGR888
+		: libcamera::formats::RGB888;
 	configuration_->at(2).size.width  = options_->viewfinder_width;
 	configuration_->at(2).size.height = options_->viewfinder_height;
 	configuration_->at(2).bufferCount = 4;

@@ -38,14 +38,14 @@ enum class Metering {
 };
 
 enum class WhiteBalance {
-    AUTO        = libcamera::controls::AwbAuto,
-    INCANDESCENT= libcamera::controls::AwbIncandescent,
-    TUNGSTEN    = libcamera::controls::AwbTungsten,
-    FLUORESCENT = libcamera::controls::AwbFluorescent,
-    INDOOR      = libcamera::controls::AwbIndoor,
-    DAYLIGHT    = libcamera::controls::AwbDaylight,
-    CLOUDY      = libcamera::controls::AwbCloudy,
-    CUSTOM      = libcamera::controls::AwbCustom
+    AUTO         = libcamera::controls::AwbAuto,
+    INCANDESCENT = libcamera::controls::AwbIncandescent,
+    TUNGSTEN     = libcamera::controls::AwbTungsten,
+    FLUORESCENT  = libcamera::controls::AwbFluorescent,
+    INDOOR       = libcamera::controls::AwbIndoor,
+    DAYLIGHT     = libcamera::controls::AwbDaylight,
+    CLOUDY       = libcamera::controls::AwbCloudy,
+    CUSTOM       = libcamera::controls::AwbCustom
 };
 
 enum class PixelFormat {
@@ -121,9 +121,9 @@ public:
     // Image transform
     libcamera::Transform transform;
 
-    // Zoom and pan — changes take effect on the next captured frame
-    // zoom: 1.0 = full sensor, 2.0 = 2× zoom (>= 1.0)
-    // pan_x/pan_y: centre of crop as fraction of sensor (0.0–1.0, default 0.5)
+    // Zoom and pan — changes are picked up automatically on the next frame
+    // zoom: >= 1.0 (1.0 = full sensor)
+    // pan_x/pan_y: 0.0–1.0, centre of crop window (default 0.5 = centred)
     float zoom;
     float pan_x;
     float pan_y;
@@ -155,27 +155,70 @@ public:
     bool getVideoFrame(cv::Mat &frame, unsigned int timeout);
     void stopVideo();
 
-    // ROI / zoom
+    // Viewfinder mode — combinable with photo or video
+    bool startViewfinder(std::function<void(cv::Mat &)> callback);
+    void stopViewfinder();
+
+    // Explicit zoom apply (the dispatcher also applies it automatically)
     void ApplyZoomOptions();
 
 private:
     std::unique_ptr<LibcameraApp> app_;
-    void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
-    void videoThread();
 
+    // --- Mode state ---
+    bool camera_started_   = false; // photo config loaded
+    bool video_running_    = false; // video mode active
+    bool viewfinder_active_= false; // viewfinder callback active
     unsigned int still_flags_;
-    unsigned int vw_, vh_, vstr_;
 
+    // --- Video stream dimensions ---
+    unsigned int vw_ = 0, vh_ = 0, vstr_ = 0;
+
+    // --- Video frame delivery (for getVideoFrame polling) ---
     std::vector<uint8_t> front_buffer_;
     std::vector<uint8_t> back_buffer_;
-    std::mutex frame_mutex_;
+    std::mutex           frame_mutex_;
     std::condition_variable frame_cv_;
     bool frame_ready_ = false;
 
-    std::thread video_thread_;
-    std::atomic<bool> running_{false};
+    // --- Still frame delivery (for capturePhoto when dispatcher is running) ---
+    CompletedRequestPtr  still_pending_;
+    bool                 still_ready_ = false;
+    std::mutex           still_mutex_;
+    std::condition_variable still_cv_;
 
-    bool camera_started_ = false;
+    // --- Viewfinder callback ---
+    std::function<void(cv::Mat &)> viewfinder_cb_;
+
+    // --- Dispatcher thread ---
+    std::thread dispatcher_;
+    std::atomic<bool> dispatcher_running_{false};
+
+    // --- Zoom change detection ---
+    float last_zoom_  = 1.0f;
+    float last_pan_x_ = 0.5f;
+    float last_pan_y_ = 0.5f;
+
+    // --- Internal helpers ---
+    // Convert a raw buffer from a libcamera stream to cv::Mat.
+    // is_video: true → use video dimensions (vw_/vh_/vstr_),
+    //           false → stream provides its own dimensions via w/h/stride args
+    void toMat(cv::Mat &dst,
+               const uint8_t *src, unsigned int w, unsigned int h,
+               unsigned int stride);
+
+    void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
+
+    // Dispatcher thread body
+    void dispatcherThread();
+
+    // Start/stop the dispatcher (camera must already be started/stopped by caller)
+    void startDispatcher();
+    void stopDispatcher();
+
+    // Reconfigure camera for the current combination of active modes.
+    // Caller must have called StopCamera()+Teardown() first.
+    void reconfigure();
 };
 
 } // namespace lccv
