@@ -161,8 +161,7 @@ void LibcameraApp::Teardown()
 	}
 	mapped_buffers_.clear();
 
-	delete allocator_;
-	allocator_ = nullptr;
+	allocator_.reset();
 
 	configuration_.reset();
 
@@ -434,7 +433,7 @@ void LibcameraApp::setupCapture()
 
 	// Next allocate all the buffers we need, mmap them and store them on a free list.
 
-	allocator_ = new FrameBufferAllocator(camera_);
+	allocator_ = std::make_unique<FrameBufferAllocator>(camera_);
 	for (StreamConfiguration &config : *configuration_)
 	{
 		Stream *stream = config.stream();

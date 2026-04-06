@@ -167,7 +167,7 @@ private:
 	std::unique_ptr<CameraConfiguration> configuration_;
 	std::map<FrameBuffer *, std::vector<libcamera::Span<uint8_t>>> mapped_buffers_;
 	std::map<std::string, Stream *> streams_;
-	FrameBufferAllocator *allocator_ = nullptr;
+	std::unique_ptr<FrameBufferAllocator> allocator_;
 	std::map<Stream *, std::queue<FrameBuffer *>> frame_buffers_;
 	std::queue<Request *> free_requests_;
 	std::vector<std::unique_ptr<Request>> requests_;

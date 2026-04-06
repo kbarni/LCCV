@@ -3,6 +3,7 @@
 
 #include <mutex>
 #include <atomic>
+#include <vector>
 #include <pthread.h>
 #include <opencv2/opencv.hpp>
 
@@ -34,14 +35,14 @@ public:
 protected:
     void run();
 protected:
-    LibcameraApp *app;
+    std::unique_ptr<LibcameraApp> app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
     static void *videoThreadFunc(void *p);
     pthread_t videothread;
     unsigned int still_flags;
     unsigned int vw,vh,vstr;
     std::atomic<bool> running,frameready;
-    uint8_t *framebuffer;
+    std::vector<uint8_t> framebuffer;
     std::mutex mtx;
     bool camerastarted;
 };
