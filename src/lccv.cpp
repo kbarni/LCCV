@@ -56,25 +56,36 @@ bool PiCamera::stopPhoto()
 
 bool PiCamera::capturePhoto(cv::Mat &frame)
 {
+    bool opened_here = false;
     if (!camerastarted) {
         app->OpenCamera();
         app->ConfigureStill(still_flags);
+        opened_here = true;
     }
     app->StartCamera();
     LibcameraApp::Msg msg = app->Wait();
-    if (msg.type == LibcameraApp::MsgType::Quit)
-        return false;
-    else if (msg.type != LibcameraApp::MsgType::RequestComplete)
-        return false;
-    if (app->StillStream())
-    {
+    if (msg.type != LibcameraApp::MsgType::RequestComplete) {
         app->StopCamera();
-        getImage(frame, std::get<CompletedRequestPtr>(msg.payload));
+        if (opened_here) {
+            app->Teardown();
+            app->CloseCamera();
+        }
+        return false;
+    }
+    if (!app->StillStream()) {
+        std::cerr << "Incorrect stream received" << std::endl;
+        app->StopCamera();
+        if (opened_here) {
+            app->Teardown();
+            app->CloseCamera();
+        }
+        return false;
+    }
+    app->StopCamera();
+    getImage(frame, std::get<CompletedRequestPtr>(msg.payload));
+    if (opened_here) {
         app->Teardown();
         app->CloseCamera();
-    } else {
-        std::cerr << "Incorrect stream received" << std::endl;
-        return false;
     }
     return true;
 }
