@@ -11,16 +11,12 @@ void Options::print() const
 {
     std::cerr << "Options:" << std::endl;
     std::cerr << "    verbose: " << verbose << std::endl;
-    std::cerr << "    timeout: " << timeout << std::endl;
     std::cerr << "    photo resolution: " << photo_width << " x " << photo_height << std::endl;
     std::cerr << "    video resolution: " << video_width << " x " << video_height << std::endl;
+    std::cerr << "    viewfinder resolution: " << viewfinder_width << " x " << viewfinder_height << std::endl;
     std::cerr << "    framerate: " << framerate << std::endl;
+    std::cerr << "    zoom: " << zoom << "  pan: " << pan_x << "," << pan_y << std::endl;
     std::cerr << "    transform: " << transformToString(transform) << std::endl;
-    if (roi_width == 0 || roi_height == 0)
-        std::cerr << "    roi: all" << std::endl;
-    else
-        std::cerr << "    roi: " << roi_x << "," << roi_y
-                  << "," << roi_width << "," << roi_height << std::endl;
     if (shutter)
         std::cerr << "    shutter: " << shutter << std::endl;
     if (gain)

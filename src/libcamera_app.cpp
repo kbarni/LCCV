@@ -175,15 +175,14 @@ void LibcameraApp::StartCamera()
 
 	// Build a list of initial controls that we must set in the camera before starting it.
 	// We don't overwrite anything the application may have set before calling us.
-	if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
+	if (!controls_.get(controls::ScalerCrop) && options_->zoom > 1.0f)
 	{
 		Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
-		int x = options_->roi_x * sensor_area.width;
-		int y = options_->roi_y * sensor_area.height;
-		int w = options_->roi_width * sensor_area.width;
-		int h = options_->roi_height * sensor_area.height;
+		int w = sensor_area.width  / options_->zoom;
+		int h = sensor_area.height / options_->zoom;
+		int x = sensor_area.x + (sensor_area.width  - w) * options_->pan_x;
+		int y = sensor_area.y + (sensor_area.height - h) * options_->pan_y;
 		Rectangle crop(x, y, w, h);
-		crop.translateBy(sensor_area.topLeft());
 		if (options_->verbose)
 			std::cerr << "Using crop " << crop.toString() << std::endl;
 		controls_.set(controls::ScalerCrop, crop);
@@ -278,20 +277,20 @@ void LibcameraApp::StopCamera()
 		std::cerr << "Camera stopped!" << std::endl;
 }
 
-void LibcameraApp::ApplyRoiSettings(){
-    if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
-    {
-        Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
-        int x = options_->roi_x * sensor_area.width;
-        int y = options_->roi_y * sensor_area.height;
-        int w = options_->roi_width * sensor_area.width;
-        int h = options_->roi_height * sensor_area.height;
-        Rectangle crop(x, y, w, h);
-        crop.translateBy(sensor_area.topLeft());
-        if (options_->verbose)
-            std::cerr << "Using crop " << crop.toString() << std::endl;
-        controls_.set(controls::ScalerCrop, crop);
-    }
+void LibcameraApp::ApplyRoiSettings()
+{
+    if (options_->zoom <= 1.0f)
+        return;
+    Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
+    int w = sensor_area.width  / options_->zoom;
+    int h = sensor_area.height / options_->zoom;
+    int x = sensor_area.x + (sensor_area.width  - w) * options_->pan_x;
+    int y = sensor_area.y + (sensor_area.height - h) * options_->pan_y;
+    Rectangle crop(x, y, w, h);
+    if (options_->verbose)
+        std::cerr << "Applying zoom crop " << crop.toString() << std::endl;
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    controls_.set(controls::ScalerCrop, crop);
 }
 
 LibcameraApp::Msg LibcameraApp::Wait()

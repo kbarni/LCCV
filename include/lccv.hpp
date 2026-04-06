@@ -48,6 +48,13 @@ enum class WhiteBalance {
     CUSTOM      = libcamera::controls::AwbCustom
 };
 
+enum class PixelFormat {
+    BGR,        // 8-bit BGR — OpenCV native, default
+    RGB,        // 8-bit RGB
+    GRAYSCALE,  // 8-bit single channel (converted from colour stream)
+    BAYER       // Raw Bayer (from still raw stream, single channel)
+};
+
 // ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
@@ -57,6 +64,8 @@ public:
     Options()
         : photo_width(4056), photo_height(3040),
           video_width(1280), video_height(720),
+          viewfinder_width(640), viewfinder_height(480),
+          format(PixelFormat::BGR),
           framerate(30),
           verbose(false),
           timeout(1000),
@@ -66,7 +75,7 @@ public:
           denoise("auto"),
           camera(0),
           transform(libcamera::Transform::Identity),
-          roi_x(0), roi_y(0), roi_width(0), roi_height(0),
+          zoom(1.0f), pan_x(0.5f), pan_y(0.5f),
           metering_(Metering::MATRIX),
           exposure_(Exposure::NORMAL),
           wb_(WhiteBalance::AUTO)
@@ -74,17 +83,21 @@ public:
 
     void print() const;
 
-    void setMetering(Metering m)      { metering_ = m; }
-    void setExposureMode(Exposure e)  { exposure_ = e; }
+    void setMetering(Metering m)         { metering_ = m; }
+    void setExposureMode(Exposure e)     { exposure_ = e; }
     void setWhiteBalance(WhiteBalance w) { wb_ = w; }
 
-    int getMeteringMode()  const { return static_cast<int>(metering_); }
-    int getExposureMode()  const { return static_cast<int>(exposure_); }
-    int getWhiteBalance()  const { return static_cast<int>(wb_); }
+    int getMeteringMode() const { return static_cast<int>(metering_); }
+    int getExposureMode() const { return static_cast<int>(exposure_); }
+    int getWhiteBalance() const { return static_cast<int>(wb_); }
 
     // Resolution
     unsigned int photo_width, photo_height;
     unsigned int video_width, video_height;
+    unsigned int viewfinder_width, viewfinder_height;
+
+    // Pixel format
+    PixelFormat format;
 
     // Capture
     float framerate;
@@ -105,13 +118,19 @@ public:
     // Camera selection
     unsigned int camera;
 
-    // Transform / ROI (used internally; will migrate to zoom/pan in T09)
+    // Image transform
     libcamera::Transform transform;
-    float roi_x, roi_y, roi_width, roi_height;
+
+    // Zoom and pan — changes take effect on the next captured frame
+    // zoom: 1.0 = full sensor, 2.0 = 2× zoom (>= 1.0)
+    // pan_x/pan_y: centre of crop as fraction of sensor (0.0–1.0, default 0.5)
+    float zoom;
+    float pan_x;
+    float pan_y;
 
 private:
-    Metering    metering_;
-    Exposure    exposure_;
+    Metering     metering_;
+    Exposure     exposure_;
     WhiteBalance wb_;
 };
 
