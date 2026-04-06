@@ -18,9 +18,7 @@
 #include <string>
 #include <thread>
 #include <variant>
-#include <any>
 #include <map>
-#include <iomanip>
 
 #include <libcamera/base/span.h>
 #include <libcamera/camera.h>
@@ -186,183 +184,6 @@ private:
 	uint64_t sequence_ = 0;
 };
 
-struct FrameInfo
-{
-	FrameInfo(libcamera::ControlList &ctrls)
-		: exposure_time(0.0), digital_gain(0.0), colour_gains({ { 0.0f, 0.0f } }), focus(0.0), aelock(false)
-	{
-        auto exp = ctrls.get(libcamera::controls::ExposureTime);
-		if (exp)
-			exposure_time = *exp;
-
-		auto ag = ctrls.get(libcamera::controls::AnalogueGain);
-		if (ag)
-			analogue_gain = *ag;
-
-		auto dg = ctrls.get(libcamera::controls::DigitalGain);
-		if (dg)
-			digital_gain = *dg;
-
-		auto cg = ctrls.get(libcamera::controls::ColourGains);
-		if (cg)
-		{
-			colour_gains[0] = (*cg)[0], colour_gains[1] = (*cg)[1];
-		}
-
-		auto fom = ctrls.get(libcamera::controls::FocusFoM);
-		if (fom)
-			focus = *fom;
-
-		auto ae = ctrls.get(libcamera::controls::AeLocked);
-		if (ae)
-			aelock = *ae;
-	}
-
-	std::string ToString(std::string &info_string) const
-	{
-		std::string parsed(info_string);
-
-		for (auto const &t : tokens)
-		{
-			std::size_t pos = parsed.find(t);
-			if (pos != std::string::npos)
-			{
-				std::stringstream value;
-				value << std::fixed << std::setprecision(2);
-
-				if (t == "%frame")
-					value << sequence;
-				else if (t == "%fps")
-					value << fps;
-				else if (t == "%exp")
-					value << exposure_time;
-				else if (t == "%ag")
-					value << analogue_gain;
-				else if (t == "%dg")
-					value << digital_gain;
-				else if (t == "%rg")
-					value << colour_gains[0];
-				else if (t == "%bg")
-					value << colour_gains[1];
-				else if (t == "%focus")
-					value << focus;
-				else if (t == "%aelock")
-					value << aelock;
-
-				parsed.replace(pos, t.length(), value.str());
-			}
-		}
-
-		return parsed;
-	}
-
-	unsigned int sequence;
-	float exposure_time;
-	float analogue_gain;
-	float digital_gain;
-	std::array<float, 2> colour_gains;
-	float focus;
-	float fps;
-	bool aelock;
-
-private:
-	// Info text tokens.
-	inline static const std::string tokens[] = { "%frame", "%fps", "%exp",	 "%ag",	   "%dg",
-												 "%rg",	   "%bg",  "%focus", "%aelock" };
-};
-
-class Metadata
-{
-public:
-	Metadata() = default;
-
-	Metadata(Metadata const &other)
-	{
-		std::scoped_lock other_lock(other.mutex_);
-		data_ = other.data_;
-	}
-
-	Metadata(Metadata &&other)
-	{
-		std::scoped_lock other_lock(other.mutex_);
-		data_ = std::move(other.data_);
-		other.data_.clear();
-	}
-
-	template <typename T>
-	void Set(std::string const &tag, T &&value)
-	{
-		std::scoped_lock lock(mutex_);
-		data_.insert_or_assign(tag, std::forward<T>(value));
-	}
-
-	template <typename T>
-	int Get(std::string const &tag, T &value) const
-	{
-		std::scoped_lock lock(mutex_);
-		auto it = data_.find(tag);
-		if (it == data_.end())
-			return -1;
-		value = std::any_cast<T>(it->second);
-		return 0;
-	}
-
-	void Clear()
-	{
-		std::scoped_lock lock(mutex_);
-		data_.clear();
-	}
-
-	Metadata &operator=(Metadata const &other)
-	{
-		std::scoped_lock lock(mutex_, other.mutex_);
-		data_ = other.data_;
-		return *this;
-	}
-
-	Metadata &operator=(Metadata &&other)
-	{
-		std::scoped_lock lock(mutex_, other.mutex_);
-		data_ = std::move(other.data_);
-		other.data_.clear();
-		return *this;
-	}
-
-	void Merge(Metadata &other)
-	{
-		std::scoped_lock lock(mutex_, other.mutex_);
-		data_.merge(other.data_);
-	}
-
-	template <typename T>
-	T *GetLocked(std::string const &tag)
-	{
-		// This allows in-place access to the Metadata contents,
-		// for which you should be holding the lock.
-		auto it = data_.find(tag);
-		if (it == data_.end())
-			return nullptr;
-		return std::any_cast<T>(&it->second);
-	}
-
-	template <typename T>
-	void SetLocked(std::string const &tag, T &&value)
-	{
-		// Use this only if you're holding the lock yourself.
-		data_.insert_or_assign(tag, std::forward<T>(value));
-	}
-
-	// Note: use of (lowercase) lock and unlock means you can create scoped
-	// locks with the standard lock classes.
-	// e.g. std::lock_guard<RPiController::Metadata> lock(metadata)
-	void lock() { mutex_.lock(); }
-	void unlock() { mutex_.unlock(); }
-
-private:
-	mutable std::mutex mutex_;
-	std::map<std::string, std::any> data_;
-};
-
 struct CompletedRequest
 {
 	using BufferMap = libcamera::Request::BufferMap;
@@ -379,5 +200,4 @@ struct CompletedRequest
 	ControlList metadata;
 	Request *request;
 	float framerate;
-	Metadata post_process_metadata;
 };
