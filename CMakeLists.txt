@@ -13,6 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -pedantic -Wno-unused-parameter -faligned-new -Werror -Wfatal-errors)
 add_definitions(-D_FILE_OFFSET_BITS=64)
+ADD_DEFINITIONS(-DQT_NO_KEYWORDS)
 
 if(CMAKE_COMPILER_IS_GNUCXX)
     add_compile_options(-Wno-psabi)

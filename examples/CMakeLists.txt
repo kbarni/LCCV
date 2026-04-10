@@ -22,3 +22,15 @@ foreach(example takephoto takevideo viewfinder)
         target_link_libraries(${example} PRIVATE ${LCCV_TARGET} ${OpenCV_LIBS})
     endif()
 endforeach()
+
+# Qt smartphone camera demo — only built when Qt5 or Qt6 is available.
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(NOT Qt6_FOUND)
+    find_package(Qt5 QUIET COMPONENTS Widgets)
+endif()
+
+if(Qt6_FOUND OR Qt5_FOUND)
+    add_subdirectory(qt_smartphone)
+else()
+    message(STATUS "Qt not found — skipping qt_smartphone example")
+endif()

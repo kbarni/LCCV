@@ -16,15 +16,15 @@ void Options::print() const
     std::cerr << "    framerate: " << framerate << std::endl;
     std::cerr << "    zoom: " << zoom << "  pan: " << pan_x << "," << pan_y << std::endl;
     std::cerr << "    transform: " << transformToString(transform) << std::endl;
-    if (shutter)
+    if (shutter > 0.0f)
         std::cerr << "    shutter: " << shutter << std::endl;
-    if (gain)
+    if (gain > 0.0f)
         std::cerr << "    gain: " << gain << std::endl;
     std::cerr << "    metering: " << getMeteringMode() << std::endl;
     std::cerr << "    exposure: " << getExposureMode() << std::endl;
     std::cerr << "    ev: " << ev << std::endl;
     std::cerr << "    awb: " << getWhiteBalance() << std::endl;
-    if (awb_gain_r && awb_gain_b)
+    if (awb_gain_r > 0.0f && awb_gain_b > 0.0f)
         std::cerr << "    awb gains: red " << awb_gain_r
                   << " blue " << awb_gain_b << std::endl;
     std::cerr << "    brightness: " << brightness << std::endl;
@@ -93,16 +93,19 @@ void Camera::toMat(cv::Mat &dst,
         const uint8_t *ptr = src;
         for (unsigned int i = 0; i < h; i++, ptr += stride)
             memcpy(tmp.ptr(i), ptr, w * 3);
-        cv::cvtColor(tmp, dst, cv::COLOR_BGR2GRAY);
+        // Stream is BGR888 when format would be BGR, RGB888 otherwise.
+        // Since GRAYSCALE is not BGR, reconfigure() picks FLAG_STILL_RGB → RGB888.
+        cv::cvtColor(tmp, dst, cv::COLOR_RGB2GRAY);
         break;
     }
     case PixelFormat::BAYER: {
         // Raw stream: single plane, 16-bit packed on most sensors
         // Deliver as CV_16UC1; user can demosaic as needed
         dst.create(h, w, CV_16UC1);
+        const size_t row_bytes = std::min((size_t)stride, (size_t)w * 2);
         const uint8_t *ptr = src;
         for (unsigned int i = 0; i < h; i++, ptr += stride)
-            memcpy(dst.ptr(i), ptr, stride);
+            memcpy(dst.ptr(i), ptr, row_bytes);
         break;
     }
     }
@@ -150,8 +153,10 @@ void Camera::reconfigure()
         app_->ConfigureStillWithViewfinder(flags);
     else if (camera_started_)
         app_->ConfigureStill(flags);
-    else // video or viewfinder-only
-        app_->ConfigureViewfinder();
+    else if (video_running_)
+        app_->ConfigureViewfinder(options->video_width, options->video_height);
+    else // viewfinder-only
+        app_->ConfigureViewfinder(options->viewfinder_width, options->viewfinder_height);
 
     // Capture stream dimensions for the video/viewfinder buffer
     if (!camera_started_ || viewfinder_active_) {
@@ -177,6 +182,8 @@ void Camera::startDispatcher()
 void Camera::stopDispatcher()
 {
     dispatcher_running_.store(false, std::memory_order_release);
+    // Post a Quit message to unblock the dispatcher if it's waiting on the queue
+    app_->PostQuit();
     // Wake up any callers blocked on frame_cv_ or still_cv_
     frame_cv_.notify_all();
     still_cv_.notify_all();
@@ -400,10 +407,7 @@ bool Camera::getVideoFrame(cv::Mat &frame, unsigned int timeout)
 
     if (!got || !frame_ready_) return false;
 
-    frame.create(vh_, vw_, CV_8UC3);
-    const uint8_t *ptr = front_buffer_.data();
-    for (unsigned int i = 0; i < vh_; i++, ptr += vstr_)
-        memcpy(frame.ptr(i), ptr, vw_ * 3);
+    toMat(frame, front_buffer_.data(), vw_, vh_, vstr_);
 
     frame_ready_ = false;
     return true;

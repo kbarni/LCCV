@@ -94,7 +94,7 @@ public:
 	void CloseCamera();
 
 	void ConfigureStill(unsigned int flags = FLAG_STILL_NONE);
-	void ConfigureViewfinder();
+	void ConfigureViewfinder(unsigned int width, unsigned int height);
 	void ConfigureStillWithViewfinder(unsigned int flags = FLAG_STILL_NONE);
 
 	void Teardown();
@@ -107,6 +107,7 @@ public:
 
 	Msg Wait();
 	void PostMessage(MsgType &t, MsgPayload &p);
+	void PostQuit();
 
 	Stream *GetStream(std::string const &name, unsigned int *w = nullptr, unsigned int *h = nullptr,
 					  unsigned int *stride = nullptr) const;

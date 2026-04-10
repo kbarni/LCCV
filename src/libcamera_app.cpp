@@ -99,7 +99,7 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
     if (options_->photo_height)
         configuration_->at(0).size.height = options_->photo_height;
 
-//    configuration_->transform = options_->transform;
+	configuration_->transform = options_->transform;
 
 	//if (have_raw_stream && !options_->rawfull)
 	{
@@ -118,7 +118,7 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 		std::cerr << "Still capture setup complete" << std::endl;
 }
 
-void LibcameraApp::ConfigureViewfinder()
+void LibcameraApp::ConfigureViewfinder(unsigned int width, unsigned int height)
 {
     if (options_->verbose)
         std::cerr << "Configuring viewfinder..." << std::endl;
@@ -132,9 +132,10 @@ void LibcameraApp::ConfigureViewfinder()
         (options_->format == lccv::PixelFormat::BGR)
         ? libcamera::formats::BGR888
         : libcamera::formats::RGB888;
-    configuration_->at(0).size.width  = options_->video_width;
-    configuration_->at(0).size.height = options_->video_height;
+    configuration_->at(0).size.width  = width;
+    configuration_->at(0).size.height = height;
     configuration_->at(0).bufferCount = 4;
+    configuration_->transform = options_->transform;
 
     configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
     setupCapture();
@@ -184,6 +185,7 @@ void LibcameraApp::ConfigureStillWithViewfinder(unsigned int flags)
 	configuration_->at(2).size.width  = options_->viewfinder_width;
 	configuration_->at(2).size.height = options_->viewfinder_height;
 	configuration_->at(2).bufferCount = 4;
+	configuration_->transform = options_->transform;
 
 	configureDenoise(options_->denoise == "auto" ? "cdn_hq" : options_->denoise);
 	setupCapture();
@@ -243,9 +245,9 @@ void LibcameraApp::StartCamera()
 		}
 	}
 
-	if (!controls_.get(controls::ExposureTime) && options_->shutter)
-		controls_.set(controls::ExposureTime, options_->shutter);
-	if (!controls_.get(controls::AnalogueGain) && options_->gain)
+	if (!controls_.get(controls::ExposureTime) && options_->shutter > 0.0f)
+		controls_.set(controls::ExposureTime, static_cast<int32_t>(options_->shutter));
+	if (!controls_.get(controls::AnalogueGain) && options_->gain > 0.0f)
 		controls_.set(controls::AnalogueGain, options_->gain);
 	if (!controls_.get(controls::AeMeteringMode))
 		controls_.set(controls::AeMeteringMode, options_->getMeteringMode());
@@ -255,7 +257,7 @@ void LibcameraApp::StartCamera()
 		controls_.set(controls::ExposureValue, options_->ev);
 	if (!controls_.get(controls::AwbMode))
 		controls_.set(controls::AwbMode, options_->getWhiteBalance());
-	if (!controls_.get(controls::ColourGains) && options_->awb_gain_r && options_->awb_gain_b)
+	if (!controls_.get(controls::ColourGains) && options_->awb_gain_r > 0.0f && options_->awb_gain_b > 0.0f)
 		controls_.set(controls::ColourGains, libcamera::Span<const float, 2>({ options_->awb_gain_r, options_->awb_gain_b }));
 	if (!controls_.get(controls::Brightness))
 		controls_.set(controls::Brightness, options_->brightness);
@@ -391,6 +393,11 @@ void LibcameraApp::PostMessage(MsgType &t, MsgPayload &p)
 	msg_queue_.Post(Msg(t, std::move(p)));
 }
 
+void LibcameraApp::PostQuit()
+{
+	msg_queue_.Post(Msg(MsgType::Quit));
+}
+
 libcamera::Stream *LibcameraApp::GetStream(std::string const &name, unsigned int *w, unsigned int *h,
 										   unsigned int *stride) const
 {
@@ -492,11 +499,12 @@ void LibcameraApp::setupCapture()
 			// "Single plane" buffers appear as multi-plane here, but we can spot them because then
 			// planes all share the same fd. We accumulate them so as to mmap the buffer only once.
 			size_t buffer_size = 0;
-			for (unsigned i = 0; i < buffer->planes().size(); i++)
+			const auto &planes = buffer->planes();
+			for (unsigned i = 0; i < planes.size(); i++)
 			{
-				const FrameBuffer::Plane &plane = buffer->planes()[i];
+				const FrameBuffer::Plane &plane = planes[i];
 				buffer_size += plane.length;
-				if (i == buffer->planes().size() - 1 || plane.fd.get() != buffer->planes()[i + 1].fd.get())
+				if (i == planes.size() - 1 || plane.fd.get() != planes[i + 1].fd.get())
 				{
 					void *memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, plane.fd.get(), 0);
 					mapped_buffers_[buffer.get()].push_back(
