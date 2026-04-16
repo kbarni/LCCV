@@ -3,6 +3,7 @@
 
 #include <mutex>
 #include <atomic>
+#include <vector>
 #include <pthread.h>
 #include <opencv2/opencv.hpp>
 
@@ -41,7 +42,9 @@ protected:
     unsigned int still_flags;
     unsigned int vw,vh,vstr;
     std::atomic<bool> running,frameready;
-    uint8_t *framebuffer;
+    std::vector<uint8_t> framebuffer;
+    size_t vbytesused;
+    libcamera::Stream *vstream;
     std::mutex mtx;
     bool camerastarted;
 };

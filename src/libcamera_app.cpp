@@ -78,9 +78,13 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 	if (options_->verbose)
 		std::cerr << "Configuring still capture..." << std::endl;
 
-	// Always request a raw stream as this forces the full resolution capture mode.
-	// (options_->mode can override the choice of camera mode, however.)
-	StreamRoles stream_roles = { StreamRole::StillCapture, StreamRole::Raw };
+	// Most pipeline handlers can pair a still stream with a raw bayer stream
+	// (Pi camera, etc.); UVC and other simple handlers only expose the
+	// processed stream. Only request Raw when explicitly asked for, otherwise
+	// generateConfiguration() returns null on UVC and configuration fails.
+	StreamRoles stream_roles = { StreamRole::StillCapture };
+	if (flags & FLAG_STILL_RAW)
+		stream_roles.push_back(StreamRole::Raw);
 	configuration_ = camera_->generateConfiguration(stream_roles);
 	if (!configuration_)
 		throw std::runtime_error("failed to generate still capture configuration");
@@ -103,18 +107,19 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 
 //    configuration_->transform = options_->transform;
 
-	//if (have_raw_stream && !options_->rawfull)
+	if (configuration_->size() > 1)
 	{
 		configuration_->at(1).size.width = configuration_->at(0).size.width;
 		configuration_->at(1).size.height = configuration_->at(0).size.height;
+		configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
 	}
-	configuration_->at(1).bufferCount = configuration_->at(0).bufferCount;
 
 	configureDenoise(options_->denoise == "auto" ? "cdn_hq" : options_->denoise);
 	setupCapture();
 
 	streams_["still"] = configuration_->at(0).stream();
-	streams_["raw"] = configuration_->at(1).stream();
+	if (configuration_->size() > 1)
+		streams_["raw"] = configuration_->at(1).stream();
 
 	if (options_->verbose)
 		std::cerr << "Still capture setup complete" << std::endl;
@@ -333,8 +338,12 @@ void LibcameraApp::queueRequest(CompletedRequest *completed_request)
 	}
 
 	{
+		// libcamera 0.7+ disallows overwriting Request::controls() wholesale
+		// (camera.cpp:1351). Merge our pending controls into the request's
+		// existing list instead, then clear so they apply only once.
 		std::lock_guard<std::mutex> lock(control_mutex_);
-		request->controls() = std::move(controls_);
+		request->controls().merge(controls_, libcamera::ControlList::MergePolicy::OverwriteExisting);
+		controls_.clear();
 	}
 
 	if (camera_->queueRequest(request) < 0)
