@@ -1,0 +1,26 @@
+# Build directories
+/build/
+/build2/
+example/build/
+example/lccv_build/
+
+# In-tree CMake droppings (artifacts of building inside the source tree)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+
+# Built artifacts
+*.so
+*.a
+*.o
+example/takephoto
+example/takevideo
+
+# Editor / tool dirs
+.vscode/
+.claude/

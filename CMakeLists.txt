@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.13)
 
 project(lccv)
 
@@ -33,15 +33,6 @@ elseif ("${ENABLE_COMPILE_FLAGS_FOR_TARGET}" STREQUAL "armv8-neon")
     # Only build with 32-bit Pi 3/4 specific optimisations if requested on the command line.
     add_definitions(-mfpu=neon-fp-armv8 -ftree-vectorize)
 endif()
-
-# Source package generation setup.
-set(CPACK_GENERATOR "TXZ")
-set(CPACK_PACKAGE_FILE_NAME "lccv-build")
-set(CPACK_SOURCE_GENERATOR "TXZ")
-set(CPACK_INSTALL_SCRIPTS ${CMAKE_SOURCE_DIR}/package.cmake)
-set(CPACK_SOURCE_PACKAGE_FILE_NAME "lccv-src")
-set(CPACK_SOURCE_IGNORE_FILES "/\.git*;/build;")
-include(CPack)
 
 find_package(PkgConfig REQUIRED)
 find_package(OpenCV REQUIRED)

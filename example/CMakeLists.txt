@@ -1,15 +1,17 @@
-project(takephoto)
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.13)
+project(lccv_examples)
 
-set (CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 17)
 
-find_package(OpenCV REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBCAMERA REQUIRED libcamera)
+# Build the in-tree library as a subproject so changes to lccv pick up here
+# without a `sudo make install` round-trip. liblccv propagates its include
+# dirs (lccv, libcamera, OpenCV) and link libraries publicly.
+if(NOT TARGET liblccv)
+    add_subdirectory(.. lccv_build)
+endif()
 
-include_directories(${LIBCAMERA_INCLUDE_DIRS} ${OPENCV_INCLUDE_DIRS})
 add_executable(takephoto takephoto.cpp)
 add_executable(takevideo takevideo.cpp)
 
-target_link_libraries(takephoto -llccv ${OpenCV_LIBS})
-target_link_libraries(takevideo -llccv ${OpenCV_LIBS})
+target_link_libraries(takephoto PRIVATE liblccv)
+target_link_libraries(takevideo PRIVATE liblccv)
