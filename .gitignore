@@ -26,3 +26,8 @@ example/test_video
 # Editor / tool dirs
 .vscode/
 .claude/
+
+# Local reference / scratch material (libcamera upstream apps and rst docs,
+# our own analysis notes). Kept locally for development reference but not
+# part of the library distribution.
+wiki/
