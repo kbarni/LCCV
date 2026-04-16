@@ -449,7 +449,7 @@ void LibcameraApp::setupCapture()
 			size_t buffer_size = 0;
 			for (unsigned i = 0; i < buffer->planes().size(); i++)
 			{
-				const FrameBuffer::Plane &plane = buffer->planes()[i];
+				const FrameBuffer::Plane plane = buffer->planes()[i];
 				buffer_size += plane.length;
 				if (i == buffer->planes().size() - 1 || plane.fd.get() != buffer->planes()[i + 1].fd.get())
 				{
