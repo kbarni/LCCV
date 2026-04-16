@@ -12,6 +12,10 @@ endif()
 
 add_executable(takephoto takephoto.cpp)
 add_executable(takevideo takevideo.cpp)
+add_executable(test_photo test_photo.cpp)
+add_executable(test_video test_video.cpp)
 
 target_link_libraries(takephoto PRIVATE liblccv)
 target_link_libraries(takevideo PRIVATE liblccv)
+target_link_libraries(test_photo PRIVATE liblccv)
+target_link_libraries(test_video PRIVATE liblccv)

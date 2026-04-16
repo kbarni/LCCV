@@ -20,6 +20,8 @@ install_manifest.txt
 *.o
 example/takephoto
 example/takevideo
+example/test_photo
+example/test_video
 
 # Editor / tool dirs
 .vscode/
