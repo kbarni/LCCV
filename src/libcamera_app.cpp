@@ -129,31 +129,32 @@ void LibcameraApp::ConfigureStill(unsigned int flags)
 		std::cerr << "Still capture setup complete" << std::endl;
 }
 
-void LibcameraApp::ConfigureViewfinder()
+void LibcameraApp::ConfigureVideo()
 {
     if (options_->verbose)
-        std::cerr << "Configuring viewfinder..." << std::endl;
+        std::cerr << "Configuring video..." << std::endl;
 
+    // libcamera's Viewfinder role is the right fit for lccv's single-stream
+    // video path: it's the lower-latency, lower-resolution pipeline on Pi
+    // sensors and the only role UVC webcams expose usefully. When viewfinder
+    // mode lands, the combined path will use { Viewfinder, VideoRecording }.
     StreamRoles stream_roles = { StreamRole::Viewfinder };
     configuration_ = camera_->generateConfiguration(stream_roles);
     if (!configuration_)
-        throw std::runtime_error("failed to generate viewfinder configuration");
+        throw std::runtime_error("failed to generate video configuration");
 
-    // Now we get to override any of the default settings from the options_->
     configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
     configuration_->at(0).size.width = options_->video_width;
     configuration_->at(0).size.height = options_->video_height;
     configuration_->at(0).bufferCount = 4;
 
-//    configuration_->transform = options_->transform;
-
     configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
     setupCapture();
 
-    streams_["viewfinder"] = configuration_->at(0).stream();
+    streams_["video"] = configuration_->at(0).stream();
 
     if (options_->verbose)
-        std::cerr << "Viewfinder setup complete" << std::endl;
+        std::cerr << "Video setup complete" << std::endl;
 }
 
 void LibcameraApp::Teardown()
@@ -403,11 +404,6 @@ libcamera::Stream *LibcameraApp::GetStream(std::string const &name, unsigned int
 	return it->second;
 }
 
-libcamera::Stream *LibcameraApp::ViewfinderStream(unsigned int *w, unsigned int *h, unsigned int *stride) const
-{
-	return GetStream("viewfinder", w, h, stride);
-}
-
 libcamera::Stream *LibcameraApp::StillStream(unsigned int *w, unsigned int *h, unsigned int *stride) const
 {
 	return GetStream("still", w, h, stride);
@@ -432,7 +428,7 @@ libcamera::Stream *LibcameraApp::GetMainStream() const
 {
 	for (auto &p : streams_)
 	{
-		if (p.first == "viewfinder" || p.first == "still" || p.first == "video")
+		if (p.first == "still" || p.first == "video")
 			return p.second;
 	}
 

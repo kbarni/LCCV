@@ -235,7 +235,7 @@ bool Camera::startVideo()
     frameready.store(false, std::memory_order_release);
     try {
         app->OpenCamera();
-        app->ConfigureViewfinder();
+        app->ConfigureVideo();
         app->StartCamera();
     } catch (const std::exception &e) {
         std::cerr << "lccv: startVideo failed: " << e.what() << std::endl;
@@ -244,7 +244,7 @@ bool Camera::startVideo()
         app->CloseCamera();
         return false;
     }
-    vstream = app->ViewfinderStream(&vw, &vh, &vstr);
+    vstream = app->VideoStream(&vw, &vh, &vstr);
     // Set running before spawning so the worker loop sees it on entry.
     running.store(true, std::memory_order_release);
     videothread = std::thread(&Camera::videoThreadFunc, this);
