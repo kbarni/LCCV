@@ -48,12 +48,10 @@ include(GNUInstallDirs)
 set(SOURCES
     src/lccv.cpp
     src/libcamera_app.cpp
-    src/libcamera_app_options.cpp
 )
 set(HEADERS
     include/lccv.hpp
     include/libcamera_app.hpp
-    include/libcamera_app_options.hpp
 )
 
 add_library(liblccv ${SOURCES} ${HEADERS})

@@ -1,4 +1,4 @@
-// Headless test for lccv::PiCamera photo mode.
+// Headless test for lccv::Camera photo mode.
 // Captures a single still and prints metadata to stdout. No display, no GUI deps.
 // Returns 0 on success, non-zero on failure.
 
@@ -9,7 +9,7 @@
 
 int main()
 {
-    lccv::PiCamera cam;
+    lccv::Camera cam;
     cam.options->photo_width  = 1280;
     cam.options->photo_height = 960;
     cam.options->verbose      = true;

@@ -1,4 +1,4 @@
-// Headless test for lccv::PiCamera video mode.
+// Headless test for lccv::Camera video mode.
 // Captures N frames and prints per-frame metadata to stdout. No display, no GUI deps.
 // Returns 0 on success, non-zero if any frame timed out.
 
@@ -12,7 +12,7 @@ int main()
     constexpr int N = 10;
     constexpr unsigned int TIMEOUT_MS = 1000;
 
-    lccv::PiCamera cam;
+    lccv::Camera cam;
     cam.options->video_width  = 640;
     cam.options->video_height = 480;
     cam.options->framerate    = 30;

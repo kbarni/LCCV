@@ -13,6 +13,53 @@
 using namespace cv;
 using namespace lccv;
 
+Options::Options()
+    : verbose(false),
+      photo_width(0), photo_height(0),
+      video_width(0), video_height(0),
+      viewfinder_width(640), viewfinder_height(480),
+      format(PixelFormat::BGR),
+      zoom(1.0f), pan_x(0.5f), pan_y(0.5f),
+      transform(libcamera::Transform::Identity),
+      shutter(0.0f), gain(0.0f), ev(0.0f),
+      awb_gain_r(0.0f), awb_gain_b(0.0f),
+      brightness(0.0f), contrast(1.0f), saturation(1.0f), sharpness(1.0f),
+      framerate(0.0f),
+      denoise("auto"),
+      camera(0),
+      metering_index(static_cast<int>(Metering::CENTRE)),
+      exposure_index(static_cast<int>(Exposure::NORMAL)),
+      awb_index(static_cast<int>(WhiteBalance::AUTO))
+{
+}
+
+void Options::print() const
+{
+    std::cerr << "Options:" << std::endl;
+    std::cerr << "    verbose: " << verbose << std::endl;
+    std::cerr << "    photo resolution: " << photo_width << " x " << photo_height << std::endl;
+    std::cerr << "    video resolution: " << video_width << " x " << video_height << std::endl;
+    std::cerr << "    viewfinder resolution: " << viewfinder_width << " x " << viewfinder_height << std::endl;
+    std::cerr << "    transform: " << libcamera::transformToString(transform) << std::endl;
+    std::cerr << "    zoom: " << zoom << "  pan: " << pan_x << "," << pan_y << std::endl;
+    if (shutter)
+        std::cerr << "    shutter: " << shutter << std::endl;
+    if (gain)
+        std::cerr << "    gain: " << gain << std::endl;
+    std::cerr << "    metering: " << metering_index << std::endl;
+    std::cerr << "    exposure: " << exposure_index << std::endl;
+    std::cerr << "    ev: " << ev << std::endl;
+    std::cerr << "    awb: " << awb_index << std::endl;
+    if (awb_gain_r && awb_gain_b)
+        std::cerr << "    awb gains: red " << awb_gain_r << " blue " << awb_gain_b << std::endl;
+    std::cerr << "    brightness: " << brightness << std::endl;
+    std::cerr << "    contrast: " << contrast << std::endl;
+    std::cerr << "    saturation: " << saturation << std::endl;
+    std::cerr << "    sharpness: " << sharpness << std::endl;
+    std::cerr << "    framerate: " << framerate << std::endl;
+    std::cerr << "    denoise: " << denoise << std::endl;
+}
+
 namespace {
 
 // Format-aware copy from a libcamera buffer plane into a BGR cv::Mat. Handles:
@@ -40,7 +87,11 @@ void bufferToMat(const libcamera::StreamConfiguration &cfg,
         const uint8_t *src = data;
         for (unsigned int y = 0; y < cfg.size.height; ++y, src += cfg.stride)
             std::memcpy(out.ptr(y), src, row_bytes);
-        if (fmt == libcamera::formats::RGB888)
+        // libcamera uses DRM fourcc naming: formats::BGR888 stores bytes as
+        // R,G,B in memory (= V4L2_PIX_FMT_RGB24) and formats::RGB888 stores
+        // bytes as B,G,R (= V4L2_PIX_FMT_BGR24). OpenCV wants B,G,R, so the
+        // swap is needed for BGR888 (despite the name).
+        if (fmt == libcamera::formats::BGR888)
             cv::cvtColor(out, out, cv::COLOR_RGB2BGR);
         return;
     }
@@ -49,12 +100,35 @@ void bufferToMat(const libcamera::StreamConfiguration &cfg,
     out = cv::Mat();
 }
 
+// Convert a BGR cv::Mat in-place to the user-requested output format.
+// BAYER is not supported in this path (requires the raw stream).
+void applyOutputFormat(cv::Mat &frame, PixelFormat fmt)
+{
+    if (frame.empty())
+        return;
+    switch (fmt)
+    {
+        case PixelFormat::BGR:
+            break;
+        case PixelFormat::RGB:
+            cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
+            break;
+        case PixelFormat::GRAYSCALE:
+            cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
+            break;
+        case PixelFormat::BAYER:
+            std::cerr << "lccv: PixelFormat::BAYER not supported via processed stream" << std::endl;
+            frame = cv::Mat();
+            break;
+    }
+}
+
 } // namespace
 
-PiCamera::PiCamera()
+Camera::Camera()
 {
-    app = new LibcameraApp(std::make_unique<Options>());
-    options = static_cast<Options *>(app->GetOptions());
+    app = std::make_unique<LibcameraApp>(std::make_unique<Options>());
+    options = app->GetOptions();
     still_flags = LibcameraApp::FLAG_STILL_NONE;
     options->photo_width = 4056;
     options->photo_height = 3040;
@@ -62,10 +136,9 @@ PiCamera::PiCamera()
     options->video_height = 480;
     options->framerate = 30;
     options->denoise = "auto";
-    options->timeout = 1000;
-    options->setMetering(Metering_Modes::METERING_MATRIX);
-    options->setExposureMode(Exposure_Modes::EXPOSURE_NORMAL);
-    options->setWhiteBalance(WhiteBalance_Modes::WB_AUTO);
+    options->setMetering(Metering::MATRIX);
+    options->setExposureMode(Exposure::NORMAL);
+    options->setWhiteBalance(WhiteBalance::AUTO);
     options->contrast = 1.0f;
     options->saturation = 1.0f;
     // BGR matches OpenCV's native channel order, so when the pipeline
@@ -78,104 +151,115 @@ PiCamera::PiCamera()
     camerastarted = false;
 }
 
-PiCamera::~PiCamera()
-{
-    delete app;
-}
+Camera::~Camera() = default;
 
-void PiCamera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
+void Camera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
 {
     libcamera::Stream *stream = app->StillStream();
     auto *buffer = payload->buffers[stream];
     const auto mem = app->Mmap(buffer);
     const size_t bytesused = buffer->metadata().planes()[0].bytesused;
     bufferToMat(stream->configuration(), mem[0].data(), bytesused, frame);
+    applyOutputFormat(frame, options->format);
 }
 
-bool PiCamera::startPhoto()
+bool Camera::startPhoto()
 {
-    app->OpenCamera();
-    app->ConfigureStill(still_flags);
-    camerastarted=true;
-    return true;
-}
-bool PiCamera::stopPhoto()
-{
-    if(camerastarted){
-        camerastarted=false;
-        app->Teardown();
-        app->CloseCamera();
-    }
-    return true;
-}
-
-bool PiCamera::capturePhoto(cv::Mat &frame)
-{
-    if(!camerastarted){
+    try {
         app->OpenCamera();
         app->ConfigureStill(still_flags);
-    }
-    app->StartCamera();
-    LibcameraApp::Msg msg = app->Wait();
-    if (msg.type == LibcameraApp::MsgType::Quit)
-        return false;
-    else if (msg.type != LibcameraApp::MsgType::RequestComplete)
-        return false;
-    if (app->StillStream())
-    {
+        app->StartCamera();
+        camerastarted = true;
+        return true;
+    } catch (const std::exception &e) {
+        std::cerr << "lccv: startPhoto failed: " << e.what() << std::endl;
+        // Best-effort rollback of whichever step succeeded before the throw.
+        // Each of Stop/Teardown/CloseCamera is a no-op when the matching
+        // bring-up step did not run, so blanket cleanup is safe.
         app->StopCamera();
-        getImage(frame, std::get<CompletedRequestPtr>(msg.payload));
         app->Teardown();
         app->CloseCamera();
-    } else {
-        std::cerr<<"Incorrect stream received"<<std::endl;
+        camerastarted = false;
         return false;
+    }
+}
+bool Camera::stopPhoto()
+{
+    if(camerastarted){
+        camerastarted = false;
         app->StopCamera();
-        if(!camerastarted){
-            app->Teardown();
-            app->CloseCamera();
-        }
+        app->Teardown();
+        app->CloseCamera();
     }
     return true;
 }
 
-bool PiCamera::startVideo()
+bool Camera::capturePhoto(cv::Mat &frame)
+{
+    // In "started" mode (startPhoto was called) the camera is already
+    // streaming and must stay that way across calls; we only Wait for the
+    // next frame. In standalone mode we do the full open/configure/start —
+    // wait — stop/teardown/close cycle for this single shot.
+    const bool standalone = !camerastarted;
+    if(standalone){
+        app->OpenCamera();
+        app->ConfigureStill(still_flags);
+        app->StartCamera();
+    }
+    LibcameraApp::Msg msg = app->Wait();
+    bool ok = false;
+    if (msg.type == LibcameraApp::MsgType::RequestComplete && app->StillStream())
+    {
+        getImage(frame, std::get<CompletedRequestPtr>(msg.payload));
+        ok = true;
+    }
+    else if (msg.type != LibcameraApp::MsgType::Quit)
+    {
+        std::cerr<<"Incorrect stream received"<<std::endl;
+    }
+    if(standalone){
+        app->StopCamera();
+        app->Teardown();
+        app->CloseCamera();
+    }
+    return ok;
+}
+
+bool Camera::startVideo()
 {
     if(camerastarted)stopPhoto();
     if(running.load(std::memory_order_relaxed)){
-        std::cerr<<"Video thread already running";
+        std::cerr<<"Video thread already running"<<std::endl;
         return false;
     }
     frameready.store(false, std::memory_order_release);
-    app->OpenCamera();
-    app->ConfigureViewfinder();
-    app->StartCamera();
-
-    int ret = pthread_create(&videothread, NULL, &videoThreadFunc, this);
-    if (ret != 0) {
-        std::cerr<<"Error starting video thread";
+    try {
+        app->OpenCamera();
+        app->ConfigureViewfinder();
+        app->StartCamera();
+    } catch (const std::exception &e) {
+        std::cerr << "lccv: startVideo failed: " << e.what() << std::endl;
+        app->StopCamera();
+        app->Teardown();
+        app->CloseCamera();
         return false;
     }
-    // Wait until the thread has actually started before returning, so a
-    // getVideoFrame() call right after startVideo() doesn't observe
-    // running=false and bail out.
-    timespec wait_step{0, 100000}; // 100us
-    while (!running.load(std::memory_order_acquire))
-        nanosleep(&wait_step, nullptr);
+    vstream = app->ViewfinderStream(&vw, &vh, &vstr);
+    // Set running before spawning so the worker loop sees it on entry.
+    running.store(true, std::memory_order_release);
+    videothread = std::thread(&Camera::videoThreadFunc, this);
     return true;
 }
 
-void PiCamera::stopVideo()
+void Camera::stopVideo()
 {
-    if(!running)return;
+    if(!running.load(std::memory_order_acquire))return;
 
     running.store(false, std::memory_order_release);
+    frameready_cv.notify_all();
 
-    //join thread
-    void *status;
-    int ret = pthread_join(videothread, &status);
-    if(ret<0)
-        std::cerr<<"Error joining thread"<<std::endl;
+    if (videothread.joinable())
+        videothread.join();
 
     app->StopCamera();
     app->Teardown();
@@ -183,64 +267,86 @@ void PiCamera::stopVideo()
     frameready.store(false, std::memory_order_release);
 }
 
-bool PiCamera::getVideoFrame(cv::Mat &frame, unsigned int timeout)
+bool Camera::getVideoFrame(cv::Mat &frame, unsigned int timeout)
 {
     if(!running.load(std::memory_order_acquire))return false;
-    auto start_time = std::chrono::high_resolution_clock::now();
-    bool timeout_reached = false;
-    timespec req;
-    req.tv_sec=0;
-    req.tv_nsec=1000000;//1ms
-    while((!frameready.load(std::memory_order_acquire))&&(!timeout_reached)){
-        nanosleep(&req,NULL);
-        timeout_reached = (std::chrono::high_resolution_clock::now() - start_time > std::chrono::milliseconds(timeout));
-    }
-    if(!frameready.load(std::memory_order_acquire))
+
+    std::unique_lock<std::mutex> lock(mtx);
+    const bool got = frameready_cv.wait_for(
+        lock, std::chrono::milliseconds(timeout),
+        [this] { return frameready.load(std::memory_order_acquire)
+                     || !running.load(std::memory_order_acquire); });
+    if (!got || !frameready.load(std::memory_order_acquire))
         return false;
 
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        bufferToMat(vstream->configuration(), framebuffer.data(), vbytesused, frame);
-        frameready.store(false, std::memory_order_release);
-    }
+    bufferToMat(vstream->configuration(), framebuffer.data(), vbytesused, frame);
+    applyOutputFormat(frame, options->format);
+    frameready.store(false, std::memory_order_release);
     return !frame.empty();
 }
 
-void *PiCamera::videoThreadFunc(void *p)
+void Camera::videoThreadFunc()
 {
-    PiCamera *t = (PiCamera *)p;
-    t->vstream = t->app->ViewfinderStream(&t->vw,&t->vh,&t->vstr);
-    t->running.store(true, std::memory_order_release);
-
-    while(t->running.load(std::memory_order_acquire)){
-        LibcameraApp::Msg msg = t->app->Wait();
+    while(running.load(std::memory_order_acquire)){
+        LibcameraApp::Msg msg = app->Wait();
         if (msg.type == LibcameraApp::MsgType::Quit){
             std::cerr<<"Quit message received"<<std::endl;
-            t->running.store(false,std::memory_order_release);
+            running.store(false, std::memory_order_release);
             break;
         }
         if (msg.type != LibcameraApp::MsgType::RequestComplete){
             std::cerr<<"lccv: unrecognised message in video thread"<<std::endl;
-            t->running.store(false,std::memory_order_release);
+            running.store(false, std::memory_order_release);
             break;
         }
 
         CompletedRequestPtr payload = std::get<CompletedRequestPtr>(msg.payload);
-        auto *buffer = payload->buffers[t->vstream];
-        auto mem = t->app->Mmap(buffer);
+        auto *buffer = payload->buffers[vstream];
+        auto mem = app->Mmap(buffer);
         // bytesused is the actual data size in this frame; for fixed-size
         // formats (RGB/BGR) it equals plane.length, for MJPEG it varies.
         const size_t bytesused = buffer->metadata().planes()[0].bytesused;
 
-        std::lock_guard<std::mutex> lock(t->mtx);
-        t->framebuffer.assign(mem[0].data(), mem[0].data() + bytesused);
-        t->vbytesused = bytesused;
-        t->frameready.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            framebuffer.assign(mem[0].data(), mem[0].data() + bytesused);
+            vbytesused = bytesused;
+            frameready.store(true, std::memory_order_release);
+        }
+        frameready_cv.notify_one();
     }
-    return NULL;
+    // Final notify so any consumer waiting past the loop exit wakes up.
+    frameready_cv.notify_all();
 }
 
-void PiCamera::ApplyZoomOptions()
+void Camera::ApplyZoomOptions()
 {
-    app->ApplyRoiSettings();
+    app->ApplyZoom(options->zoom, options->pan_x, options->pan_y);
+}
+
+namespace {
+std::vector<cv::Size> enumerateSizes(LibcameraApp &app, libcamera::StreamRole role)
+{
+    std::vector<cv::Size> out;
+    try {
+        app.OpenCamera();
+    } catch (const std::exception &e) {
+        std::cerr << "lccv: enumerateSizes open failed: " << e.what() << std::endl;
+        return out;
+    }
+    for (const libcamera::Size &s : app.SupportedSizes(role))
+        out.emplace_back(static_cast<int>(s.width), static_cast<int>(s.height));
+    app.CloseCamera();
+    return out;
+}
+} // namespace
+
+std::vector<cv::Size> Camera::supportedPhotoSizes()
+{
+    return enumerateSizes(*app, libcamera::StreamRole::StillCapture);
+}
+
+std::vector<cv::Size> Camera::supportedVideoSizes()
+{
+    return enumerateSizes(*app, libcamera::StreamRole::VideoRecording);
 }

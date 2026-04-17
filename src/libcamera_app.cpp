@@ -5,15 +5,18 @@
  * libcamera_app.cpp - base class for libcamera apps.
  */
 
-#include "libcamera_app.hpp"
-#include "libcamera_app_options.hpp"
+#include "lccv.hpp"
 
-LibcameraApp::LibcameraApp(std::unique_ptr<Options> opts)
+#include <algorithm>
+#include <set>
+#include <utility>
+
+LibcameraApp::LibcameraApp(std::unique_ptr<lccv::Options> opts)
 	: options_(std::move(opts)), controls_(controls::controls)
 
 {
 	if (!options_)
-		options_ = std::make_unique<Options>();
+		options_ = std::make_unique<lccv::Options>();
 	controls_.clear();
 }
 
@@ -61,6 +64,7 @@ void LibcameraApp::OpenCamera()
 
 void LibcameraApp::CloseCamera()
 {
+	const bool was_open = camera_acquired_;
 	if (camera_acquired_)
 		camera_->release();
 	camera_acquired_ = false;
@@ -69,7 +73,7 @@ void LibcameraApp::CloseCamera()
 
 	camera_manager_.reset();
 
-	if (options_->verbose && !options_->help)
+	if (was_open && options_->verbose)
 		std::cerr << "Camera closed" << std::endl;
 }
 
@@ -154,7 +158,8 @@ void LibcameraApp::ConfigureViewfinder()
 
 void LibcameraApp::Teardown()
 {
-	if (options_->verbose && !options_->help)
+	const bool had_state = !mapped_buffers_.empty() || configuration_ || allocator_;
+	if (had_state && options_->verbose)
 		std::cerr << "Tearing down requests, buffers and configuration" << std::endl;
 
 	for (auto &iter : mapped_buffers_)
@@ -166,8 +171,7 @@ void LibcameraApp::Teardown()
 	}
 	mapped_buffers_.clear();
 
-	delete allocator_;
-	allocator_ = nullptr;
+	allocator_.reset();
 
 	configuration_.reset();
 
@@ -183,18 +187,9 @@ void LibcameraApp::StartCamera()
 
 	// Build a list of initial controls that we must set in the camera before starting it.
 	// We don't overwrite anything the application may have set before calling us.
-	if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
+	if (!controls_.get(controls::ScalerCrop) && options_->zoom > 1.0f)
 	{
-		Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
-		int x = options_->roi_x * sensor_area.width;
-		int y = options_->roi_y * sensor_area.height;
-		int w = options_->roi_width * sensor_area.width;
-		int h = options_->roi_height * sensor_area.height;
-		Rectangle crop(x, y, w, h);
-		crop.translateBy(sensor_area.topLeft());
-		if (options_->verbose)
-			std::cerr << "Using crop " << crop.toString() << std::endl;
-		controls_.set(controls::ScalerCrop, crop);
+		ApplyZoom(options_->zoom, options_->pan_x, options_->pan_y);
 	}
 
 	// Framerate is a bit weird. If it was set programmatically, we go with that, but
@@ -216,13 +211,13 @@ void LibcameraApp::StartCamera()
 	if (!controls_.get(controls::AnalogueGain) && options_->gain)
 		controls_.set(controls::AnalogueGain, options_->gain);
 	if (!controls_.get(controls::AeMeteringMode))
-		controls_.set(controls::AeMeteringMode, options_->getMeteringMode());
+		controls_.set(controls::AeMeteringMode, options_->getMeteringIndex());
 	if (!controls_.get(controls::AeExposureMode))
-		controls_.set(controls::AeExposureMode, options_->getExposureMode());
+		controls_.set(controls::AeExposureMode, options_->getExposureIndex());
 	if (!controls_.get(controls::ExposureValue))
 		controls_.set(controls::ExposureValue, options_->ev);
 	if (!controls_.get(controls::AwbMode))
-		controls_.set(controls::AwbMode, options_->getWhiteBalance());
+		controls_.set(controls::AwbMode, options_->getWhiteBalanceIndex());
 	if (!controls_.get(controls::ColourGains) && options_->awb_gain_r && options_->awb_gain_b)
 		controls_.set(controls::ColourGains, libcamera::Span<const float, 2>({ options_->awb_gain_r, options_->awb_gain_b }));
 	if (!controls_.get(controls::Brightness))
@@ -254,9 +249,11 @@ void LibcameraApp::StartCamera()
 
 void LibcameraApp::StopCamera()
 {
+	bool was_started;
 	{
 		// We don't want QueueRequest to run asynchronously while we stop the camera.
 		std::lock_guard<std::mutex> lock(camera_stop_mutex_);
+		was_started = camera_started_;
 		if (camera_started_)
 		{
 			if (camera_->stop())
@@ -282,24 +279,65 @@ void LibcameraApp::StopCamera()
 
 	controls_.clear(); // no need for mutex here
 
-	if (options_->verbose && !options_->help)
+	if (was_started && options_->verbose)
 		std::cerr << "Camera stopped!" << std::endl;
 }
 
-void LibcameraApp::ApplyRoiSettings(){
-    if (!controls_.get(controls::ScalerCrop) && options_->roi_width != 0 && options_->roi_height != 0)
+std::vector<LibcameraApp::Size> LibcameraApp::SupportedSizes(StreamRole role)
+{
+    std::vector<Size> out;
+    if (!camera_)
+        return out;
+
+    std::unique_ptr<CameraConfiguration> cfg = camera_->generateConfiguration({ role });
+    if (!cfg || cfg->size() == 0)
+        return out;
+
+    std::set<std::pair<unsigned int, unsigned int>> seen;
+    const StreamConfiguration &scfg = cfg->at(0);
+    const libcamera::StreamFormats &fmts = scfg.formats();
+    for (const libcamera::PixelFormat &pf : fmts.pixelformats())
     {
-        Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
-        int x = options_->roi_x * sensor_area.width;
-        int y = options_->roi_y * sensor_area.height;
-        int w = options_->roi_width * sensor_area.width;
-        int h = options_->roi_height * sensor_area.height;
-        Rectangle crop(x, y, w, h);
-        crop.translateBy(sensor_area.topLeft());
-        if (options_->verbose)
-            std::cerr << "Using crop " << crop.toString() << std::endl;
-        controls_.set(controls::ScalerCrop, crop);
+        for (const Size &s : fmts.sizes(pf))
+        {
+            if (seen.insert({ s.width, s.height }).second)
+                out.push_back(s);
+        }
+        // Pipelines that advertise a range (e.g. Pi's scaler) often return an
+        // empty discrete list — fall back to the range endpoints.
+        if (fmts.sizes(pf).empty())
+        {
+            libcamera::SizeRange r = fmts.range(pf);
+            if (seen.insert({ r.min.width, r.min.height }).second)
+                out.push_back(r.min);
+            if (seen.insert({ r.max.width, r.max.height }).second)
+                out.push_back(r.max);
+        }
     }
+
+    std::sort(out.begin(), out.end(),
+              [](const Size &a, const Size &b) {
+                  return (a.width * a.height) < (b.width * b.height);
+              });
+    return out;
+}
+
+void LibcameraApp::ApplyZoom(float zoom, float pan_x, float pan_y)
+{
+    if (zoom < 1.0f) zoom = 1.0f;
+    if (pan_x < 0.0f) pan_x = 0.0f; else if (pan_x > 1.0f) pan_x = 1.0f;
+    if (pan_y < 0.0f) pan_y = 0.0f; else if (pan_y > 1.0f) pan_y = 1.0f;
+
+    Rectangle sensor_area = *camera_->properties().get(properties::ScalerCropMaximum);
+    int w = static_cast<int>(sensor_area.width  / zoom);
+    int h = static_cast<int>(sensor_area.height / zoom);
+    int x = static_cast<int>(pan_x * (sensor_area.width  - w));
+    int y = static_cast<int>(pan_y * (sensor_area.height - h));
+    Rectangle crop(x, y, w, h);
+    crop.translateBy(sensor_area.topLeft());
+    if (options_->verbose)
+        std::cerr << "Using crop " << crop.toString() << std::endl;
+    controls_.set(controls::ScalerCrop, crop);
 }
 
 LibcameraApp::Msg LibcameraApp::Wait()
@@ -443,7 +481,7 @@ void LibcameraApp::setupCapture()
 
 	// Next allocate all the buffers we need, mmap them and store them on a free list.
 
-	allocator_ = new FrameBufferAllocator(camera_);
+	allocator_ = std::make_unique<FrameBufferAllocator>(camera_);
 	for (StreamConfiguration &config : *configuration_)
 	{
 		Stream *stream = config.stream();
