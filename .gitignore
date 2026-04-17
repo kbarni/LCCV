@@ -22,6 +22,8 @@ examples/takephoto
 examples/takevideo
 examples/test_photo
 examples/test_video
+examples/test_sizes
+examples/test_viewfinder
 
 # Editor / tool dirs
 .vscode/

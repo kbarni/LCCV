@@ -146,12 +146,23 @@ Camera::Camera()
     still_flags |= LibcameraApp::FLAG_STILL_BGR;
     running.store(false, std::memory_order_release);
     frameready.store(false, std::memory_order_release);
+    vf_running.store(false, std::memory_order_release);
     vbytesused = 0;
     vstream = nullptr;
+    vfstream = nullptr;
+    vfw = vfh = vfstr = 0;
     camerastarted = false;
 }
 
-Camera::~Camera() = default;
+Camera::~Camera()
+{
+    // Destructor order runs members before base; make sure any threads we
+    // own have exited before their dependencies (app, callback) die.
+    if (vf_running.load(std::memory_order_acquire))
+        stopViewfinder();
+    if (running.load(std::memory_order_acquire))
+        stopVideo();
+}
 
 void Camera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
 {
@@ -165,6 +176,7 @@ void Camera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
 
 bool Camera::startPhoto()
 {
+    if (vf_running.load(std::memory_order_acquire)) stopViewfinder();
     try {
         app->OpenCamera();
         app->ConfigureStill(still_flags);
@@ -201,6 +213,8 @@ bool Camera::capturePhoto(cv::Mat &frame)
     // next frame. In standalone mode we do the full open/configure/start —
     // wait — stop/teardown/close cycle for this single shot.
     const bool standalone = !camerastarted;
+    if (standalone && vf_running.load(std::memory_order_acquire))
+        stopViewfinder();
     if(standalone){
         app->OpenCamera();
         app->ConfigureStill(still_flags);
@@ -228,6 +242,7 @@ bool Camera::capturePhoto(cv::Mat &frame)
 bool Camera::startVideo()
 {
     if(camerastarted)stopPhoto();
+    if (vf_running.load(std::memory_order_acquire)) stopViewfinder();
     if(running.load(std::memory_order_relaxed)){
         std::cerr<<"Video thread already running"<<std::endl;
         return false;
@@ -349,4 +364,83 @@ std::vector<cv::Size> Camera::supportedPhotoSizes()
 std::vector<cv::Size> Camera::supportedVideoSizes()
 {
     return enumerateSizes(*app, libcamera::StreamRole::VideoRecording);
+}
+
+void Camera::addViewfinder(ViewfinderCallback cb)
+{
+    vf_callback = std::move(cb);
+}
+
+bool Camera::startViewfinder()
+{
+    if (!vf_callback) {
+        std::cerr << "lccv: startViewfinder called with no callback registered" << std::endl;
+        return false;
+    }
+    if (camerastarted) stopPhoto();
+    if (running.load(std::memory_order_acquire)) stopVideo();
+    if (vf_running.load(std::memory_order_acquire)) {
+        std::cerr << "lccv: viewfinder already running" << std::endl;
+        return false;
+    }
+    try {
+        app->OpenCamera();
+        app->ConfigureViewfinder();
+        app->StartCamera();
+    } catch (const std::exception &e) {
+        std::cerr << "lccv: startViewfinder failed: " << e.what() << std::endl;
+        app->StopCamera();
+        app->Teardown();
+        app->CloseCamera();
+        return false;
+    }
+    vfstream = app->ViewfinderStream(&vfw, &vfh, &vfstr);
+    vf_running.store(true, std::memory_order_release);
+    vfthread = std::thread(&Camera::viewfinderThreadFunc, this);
+    return true;
+}
+
+void Camera::stopViewfinder()
+{
+    if (!vf_running.load(std::memory_order_acquire)) return;
+
+    vf_running.store(false, std::memory_order_release);
+
+    if (vfthread.joinable())
+        vfthread.join();
+
+    app->StopCamera();
+    app->Teardown();
+    app->CloseCamera();
+}
+
+void Camera::viewfinderThreadFunc()
+{
+    cv::Mat frame;
+    while (vf_running.load(std::memory_order_acquire)) {
+        LibcameraApp::Msg msg = app->Wait();
+        if (msg.type == LibcameraApp::MsgType::Quit) {
+            std::cerr << "lccv: quit received in viewfinder thread" << std::endl;
+            vf_running.store(false, std::memory_order_release);
+            break;
+        }
+        if (msg.type != LibcameraApp::MsgType::RequestComplete) {
+            std::cerr << "lccv: unrecognised message in viewfinder thread" << std::endl;
+            vf_running.store(false, std::memory_order_release);
+            break;
+        }
+
+        CompletedRequestPtr payload = std::get<CompletedRequestPtr>(msg.payload);
+        auto *buffer = payload->buffers[vfstream];
+        auto mem = app->Mmap(buffer);
+        const size_t bytesused = buffer->metadata().planes()[0].bytesused;
+
+        // bufferToMat produces a BGR Mat from the RGB888/BGR888 buffer.
+        // We invoke the user callback synchronously — if they need to
+        // retain the frame past the call they must copy it.
+        bufferToMat(vfstream->configuration(), mem[0].data(), bytesused, frame);
+        applyOutputFormat(frame, options->format);
+        if (!frame.empty() && vf_callback)
+            vf_callback(frame);
+    }
 }

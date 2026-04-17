@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -93,6 +94,8 @@ private:
     int awb_index;
 };
 
+using ViewfinderCallback = std::function<void(cv::Mat &)>;
+
 class Camera {
 public:
     Camera();
@@ -108,6 +111,18 @@ public:
     bool getVideoFrame(cv::Mat &frame, unsigned int timeout);
     void stopVideo();
 
+    // Viewfinder mode: register a callback that will be invoked on the
+    // viewfinder worker thread for every preview frame. The cv::Mat passed
+    // to the callback is only valid for the duration of the call. Keep the
+    // callback short and non-blocking; do not call GUI toolkits from it
+    // unless you know they are thread-safe on your platform.
+    //
+    // In this step viewfinder mode is mutually exclusive with photo and
+    // video modes: starting photo/video will stop the viewfinder first.
+    void addViewfinder(ViewfinderCallback cb);
+    bool startViewfinder();
+    void stopViewfinder();
+
     void ApplyZoomOptions();
 
     // Enumerate supported photo/video resolutions for the currently selected
@@ -120,15 +135,21 @@ protected:
     std::unique_ptr<LibcameraApp> app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
     void videoThreadFunc();
+    void viewfinderThreadFunc();
     std::thread videothread;
+    std::thread vfthread;
     unsigned int still_flags;
     unsigned int vw, vh, vstr;
+    unsigned int vfw, vfh, vfstr;
     std::atomic<bool> running, frameready;
+    std::atomic<bool> vf_running;
     std::vector<uint8_t> framebuffer;
     size_t vbytesused;
     libcamera::Stream *vstream;
+    libcamera::Stream *vfstream;
     std::mutex mtx;
     std::condition_variable frameready_cv;
+    ViewfinderCallback vf_callback;
     bool camerastarted;
 };
 

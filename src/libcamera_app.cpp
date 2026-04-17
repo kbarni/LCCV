@@ -157,6 +157,30 @@ void LibcameraApp::ConfigureVideo()
         std::cerr << "Video setup complete" << std::endl;
 }
 
+void LibcameraApp::ConfigureViewfinder()
+{
+    if (options_->verbose)
+        std::cerr << "Configuring viewfinder..." << std::endl;
+
+    StreamRoles stream_roles = { StreamRole::Viewfinder };
+    configuration_ = camera_->generateConfiguration(stream_roles);
+    if (!configuration_)
+        throw std::runtime_error("failed to generate viewfinder configuration");
+
+    configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
+    configuration_->at(0).size.width = options_->viewfinder_width;
+    configuration_->at(0).size.height = options_->viewfinder_height;
+    configuration_->at(0).bufferCount = 4;
+
+    configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
+    setupCapture();
+
+    streams_["viewfinder"] = configuration_->at(0).stream();
+
+    if (options_->verbose)
+        std::cerr << "Viewfinder setup complete" << std::endl;
+}
+
 void LibcameraApp::Teardown()
 {
 	const bool had_state = !mapped_buffers_.empty() || configuration_ || allocator_;
@@ -404,6 +428,11 @@ libcamera::Stream *LibcameraApp::GetStream(std::string const &name, unsigned int
 	return it->second;
 }
 
+libcamera::Stream *LibcameraApp::ViewfinderStream(unsigned int *w, unsigned int *h, unsigned int *stride) const
+{
+	return GetStream("viewfinder", w, h, stride);
+}
+
 libcamera::Stream *LibcameraApp::StillStream(unsigned int *w, unsigned int *h, unsigned int *stride) const
 {
 	return GetStream("still", w, h, stride);
@@ -428,7 +457,7 @@ libcamera::Stream *LibcameraApp::GetMainStream() const
 {
 	for (auto &p : streams_)
 	{
-		if (p.first == "still" || p.first == "video")
+		if (p.first == "still" || p.first == "video" || p.first == "viewfinder")
 			return p.second;
 	}
 

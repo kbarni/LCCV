@@ -97,6 +97,7 @@ public:
 
 	void ConfigureStill(unsigned int flags = FLAG_STILL_NONE);
     void ConfigureVideo();
+    void ConfigureViewfinder();
 
 	void Teardown();
 	void StartCamera();
@@ -113,6 +114,8 @@ public:
 
 	Stream *GetStream(std::string const &name, unsigned int *w = nullptr, unsigned int *h = nullptr,
 					  unsigned int *stride = nullptr) const;
+	Stream *ViewfinderStream(unsigned int *w = nullptr, unsigned int *h = nullptr,
+							 unsigned int *stride = nullptr) const;
 	Stream *StillStream(unsigned int *w = nullptr, unsigned int *h = nullptr, unsigned int *stride = nullptr) const;
 	Stream *RawStream(unsigned int *w = nullptr, unsigned int *h = nullptr, unsigned int *stride = nullptr) const;
 	Stream *VideoStream(unsigned int *w = nullptr, unsigned int *h = nullptr, unsigned int *stride = nullptr) const;
