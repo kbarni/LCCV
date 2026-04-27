@@ -1,53 +1,79 @@
-// Headless test for lccv::Camera viewfinder mode.
-// Registers a callback, runs the viewfinder for N frames, prints per-frame
-// metadata to stdout. No display, no GUI deps.
-// Returns 0 on success, non-zero if no frames arrive.
+// Interactive viewfinder + photo test for lccv::Camera.
+// Shows a live 640x480 viewfinder window for 5 seconds, then captures a
+// full-res photo and shows it in a second window. Repeats 6 times.
+// Press ESC at any time to quit early.
 
 #include <atomic>
 #include <chrono>
 #include <iostream>
-#include <thread>
+#include <mutex>
 
+#include <opencv2/opencv.hpp>
 #include <lccv.hpp>
 
 int main()
 {
-    constexpr int N = 10;
-    constexpr int TIMEOUT_MS = 2000;
-
-    std::atomic<int> frames{0};
-
     lccv::Camera cam;
     cam.options->viewfinder_width  = 640;
     cam.options->viewfinder_height = 480;
+    cam.options->photo_width       = 1280;
+    cam.options->photo_height      = 960;
     cam.options->framerate         = 30;
-    cam.options->verbose           = true;
 
-    cam.addViewfinder([&frames](cv::Mat &frame) {
-        int n = ++frames;
-        std::cout << "frame " << n
-                  << "  " << frame.cols << "x" << frame.rows
-                  << "  channels=" << frame.channels()
-                  << "  first px BGR=("
-                  << int(frame.at<cv::Vec3b>(0, 0)[0]) << ","
-                  << int(frame.at<cv::Vec3b>(0, 0)[1]) << ","
-                  << int(frame.at<cv::Vec3b>(0, 0)[2]) << ")"
-                  << std::endl;
+    cv::namedWindow("Viewfinder", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("Photo",      cv::WINDOW_AUTOSIZE);
+
+    // Frame shared between the viewfinder worker thread and the main thread.
+    // The callback must not call imshow directly — OpenCV's GUI is main-thread only.
+    cv::Mat vf_display;
+    std::mutex vf_mutex;
+    std::atomic<bool> vf_new{false};
+
+    cam.addViewfinder([&](cv::Mat &frame) {
+        std::lock_guard<std::mutex> lk(vf_mutex);
+        frame.copyTo(vf_display);
+        vf_new.store(true, std::memory_order_release);
     });
 
-    if (!cam.startViewfinder()) {
-        std::cerr << "startViewfinder failed" << std::endl;
-        return 1;
+    bool quit = false;
+    for (int i = 0; i < 6 && !quit; ++i) {
+        std::cout << "Cycle " << (i + 1) << "/6: starting viewfinder" << std::endl;
+
+        if (!cam.startViewfinder()) {
+            std::cerr << "startViewfinder failed" << std::endl;
+            return 1;
+        }
+
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline && !quit) {
+            if (vf_new.exchange(false, std::memory_order_acq_rel)) {
+                std::lock_guard<std::mutex> lk(vf_mutex);
+                if (!vf_display.empty())
+                    cv::imshow("Viewfinder", vf_display);
+            }
+            if (cv::waitKey(1) == 27)
+                quit = true;
+        }
+
+        cam.stopViewfinder();
+        if (quit) break;
+
+        std::cout << "Cycle " << (i + 1) << "/6: capturing photo" << std::endl;
+        cv::Mat photo;
+        if (cam.capturePhoto(photo)) {
+            std::cout << "Photo " << (i + 1) << ": "
+                      << photo.cols << "x" << photo.rows << std::endl;
+            cv::imshow("Photo", photo);
+            cv::waitKey(1);
+        } else {
+            std::cerr << "capturePhoto failed" << std::endl;
+        }
     }
 
-    const auto deadline = std::chrono::steady_clock::now()
-                        + std::chrono::milliseconds(TIMEOUT_MS);
-    while (frames.load() < N && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Keep the last photo visible for a moment before closing.
+    if (!quit)
+        cv::waitKey(2000);
 
-    cam.stopViewfinder();
-
-    const int n = frames.load();
-    std::cout << "received " << n << " frames" << std::endl;
-    return (n >= N) ? 0 : 1;
+    cv::destroyAllWindows();
+    return 0;
 }
