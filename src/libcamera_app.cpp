@@ -181,6 +181,48 @@ void LibcameraApp::ConfigureViewfinder()
         std::cerr << "Viewfinder setup complete" << std::endl;
 }
 
+void LibcameraApp::ConfigureVideoWithViewfinder()
+{
+    if (options_->verbose)
+        std::cerr << "Configuring video + viewfinder..." << std::endl;
+
+    // Request both roles. Some pipeline handlers (e.g. UVC) only honour one
+    // stream regardless; we detect that after generateConfiguration() and fall
+    // back to video-only, leaving streams_["viewfinder"] unset.
+    StreamRoles roles = { StreamRole::VideoRecording, StreamRole::Viewfinder };
+    configuration_ = camera_->generateConfiguration(roles);
+    if (!configuration_)
+        throw std::runtime_error("failed to generate video+viewfinder configuration");
+
+    // Stream 0: video at user-requested resolution.
+    configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
+    configuration_->at(0).size.width  = options_->video_width;
+    configuration_->at(0).size.height = options_->video_height;
+    configuration_->at(0).bufferCount = 4;
+
+    const bool has_vf_stream = configuration_->size() > 1;
+    if (has_vf_stream) {
+        configuration_->at(1).pixelFormat = libcamera::formats::RGB888;
+        configuration_->at(1).size.width  = options_->viewfinder_width;
+        configuration_->at(1).size.height = options_->viewfinder_height;
+        configuration_->at(1).bufferCount = 4;
+    }
+
+    configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
+    setupCapture();
+
+    streams_["video"] = configuration_->at(0).stream();
+    if (has_vf_stream)
+        streams_["viewfinder"] = configuration_->at(1).stream();
+
+    if (options_->verbose) {
+        std::cerr << "Video + viewfinder setup complete";
+        if (!has_vf_stream)
+            std::cerr << " (device supports one stream; viewfinder shares video stream)";
+        std::cerr << std::endl;
+    }
+}
+
 void LibcameraApp::Teardown()
 {
 	const bool had_state = !mapped_buffers_.empty() || configuration_ || allocator_;

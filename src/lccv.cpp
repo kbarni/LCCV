@@ -241,10 +241,27 @@ bool Camera::capturePhoto(cv::Mat &frame)
 
 bool Camera::startVideo()
 {
-    if(camerastarted)stopPhoto();
-    if (vf_running.load(std::memory_order_acquire)) stopViewfinder();
-    if(running.load(std::memory_order_relaxed)){
-        std::cerr<<"Video thread already running"<<std::endl;
+    // When the viewfinder pipeline is already running, startVideo() is just a
+    // software gate: the video stream is already flowing; we start delivering
+    // its frames to getVideoFrame() callers.
+    if (vf_running.load(std::memory_order_acquire)) {
+        if (!vstream) {
+            std::cerr << "lccv: no video stream in current viewfinder configuration" << std::endl;
+            return false;
+        }
+        if (running.load(std::memory_order_relaxed)) {
+            std::cerr << "lccv: video already running" << std::endl;
+            return false;
+        }
+        frameready.store(false, std::memory_order_release);
+        running.store(true, std::memory_order_release);
+        return true;
+    }
+
+    // Standalone video mode: open camera and start dedicated video thread.
+    if (camerastarted) stopPhoto();
+    if (running.load(std::memory_order_relaxed)) {
+        std::cerr << "lccv: video thread already running" << std::endl;
         return false;
     }
     frameready.store(false, std::memory_order_release);
@@ -260,7 +277,6 @@ bool Camera::startVideo()
         return false;
     }
     vstream = app->VideoStream(&vw, &vh, &vstr);
-    // Set running before spawning so the worker loop sees it on entry.
     running.store(true, std::memory_order_release);
     videothread = std::thread(&Camera::videoThreadFunc, this);
     return true;
@@ -268,8 +284,17 @@ bool Camera::startVideo()
 
 void Camera::stopVideo()
 {
-    if(!running.load(std::memory_order_acquire))return;
+    if (!running.load(std::memory_order_acquire)) return;
 
+    // When the viewfinder pipeline owns the camera, just close the gate.
+    if (vf_running.load(std::memory_order_acquire)) {
+        running.store(false, std::memory_order_release);
+        frameready_cv.notify_all();
+        frameready.store(false, std::memory_order_release);
+        return;
+    }
+
+    // Standalone video teardown.
     running.store(false, std::memory_order_release);
     frameready_cv.notify_all();
 
@@ -385,7 +410,7 @@ bool Camera::startViewfinder()
     }
     try {
         app->OpenCamera();
-        app->ConfigureViewfinder();
+        app->ConfigureVideoWithViewfinder();
         app->StartCamera();
     } catch (const std::exception &e) {
         std::cerr << "lccv: startViewfinder failed: " << e.what() << std::endl;
@@ -394,7 +419,8 @@ bool Camera::startViewfinder()
         app->CloseCamera();
         return false;
     }
-    vfstream = app->ViewfinderStream(&vfw, &vfh, &vfstr);
+    vstream  = app->VideoStream(&vw, &vh, &vstr);
+    vfstream = app->ViewfinderStream(&vfw, &vfh, &vfstr); // null on single-stream devices
     vf_running.store(true, std::memory_order_release);
     vfthread = std::thread(&Camera::viewfinderThreadFunc, this);
     return true;
@@ -405,6 +431,9 @@ void Camera::stopViewfinder()
     if (!vf_running.load(std::memory_order_acquire)) return;
 
     vf_running.store(false, std::memory_order_release);
+    // Also close the video gate so any blocked getVideoFrame() unblocks.
+    running.store(false, std::memory_order_release);
+    frameready_cv.notify_all();
 
     if (vfthread.joinable())
         vfthread.join();
@@ -412,6 +441,7 @@ void Camera::stopViewfinder()
     app->StopCamera();
     app->Teardown();
     app->CloseCamera();
+    frameready.store(false, std::memory_order_release);
 }
 
 void Camera::viewfinderThreadFunc()
@@ -431,16 +461,45 @@ void Camera::viewfinderThreadFunc()
         }
 
         CompletedRequestPtr payload = std::get<CompletedRequestPtr>(msg.payload);
-        auto *buffer = payload->buffers[vfstream];
-        auto mem = app->Mmap(buffer);
-        const size_t bytesused = buffer->metadata().planes()[0].bytesused;
+        const auto &bufs = payload->buffers;
 
-        // bufferToMat produces a BGR Mat from the RGB888/BGR888 buffer.
-        // We invoke the user callback synchronously — if they need to
-        // retain the frame past the call they must copy it.
-        bufferToMat(vfstream->configuration(), mem[0].data(), bytesused, frame);
-        applyOutputFormat(frame, options->format);
-        if (!frame.empty() && vf_callback)
-            vf_callback(frame);
+        // Video gate: copy the video buffer to the shared framebuffer so that
+        // getVideoFrame() callers can consume it, but only when the gate is open.
+        auto vit = vstream ? bufs.find(vstream) : bufs.end();
+        if (vit != bufs.end() && running.load(std::memory_order_acquire)) {
+            auto mem = app->Mmap(vit->second);
+            const size_t bytesused = vit->second->metadata().planes()[0].bytesused;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                framebuffer.assign(mem[0].data(), mem[0].data() + bytesused);
+                vbytesused = bytesused;
+                frameready.store(true, std::memory_order_release);
+            }
+            frameready_cv.notify_one();
+        }
+
+        // Viewfinder callback: prefer the dedicated viewfinder stream when
+        // present; fall back to the video stream on single-stream devices.
+        if (vf_callback) {
+            libcamera::Stream *cbstream = nullptr;
+            if (vfstream) {
+                auto fit = bufs.find(vfstream);
+                if (fit != bufs.end()) cbstream = vfstream;
+            }
+            if (!cbstream && vstream) {
+                auto fit = bufs.find(vstream);
+                if (fit != bufs.end()) cbstream = vstream;
+            }
+            if (cbstream) {
+                auto *buffer = bufs.at(cbstream);
+                auto mem = app->Mmap(buffer);
+                const size_t bytesused = buffer->metadata().planes()[0].bytesused;
+                bufferToMat(cbstream->configuration(), mem[0].data(), bytesused, frame);
+                applyOutputFormat(frame, options->format);
+                if (!frame.empty())
+                    vf_callback(frame);
+            }
+        }
     }
+    frameready_cv.notify_all();
 }

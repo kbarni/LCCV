@@ -98,6 +98,7 @@ public:
 	void ConfigureStill(unsigned int flags = FLAG_STILL_NONE);
     void ConfigureVideo();
     void ConfigureViewfinder();
+    void ConfigureVideoWithViewfinder();
 
 	void Teardown();
 	void StartCamera();
