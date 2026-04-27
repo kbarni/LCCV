@@ -49,33 +49,33 @@ int main()
         // This exercises startVideo/stopVideo as software gates while the
         // viewfinder callback continues uninterrupted throughout.
         auto t0 = std::chrono::steady_clock::now();
-        bool video_started = false;
+        bool video_open = false;
+        bool video_done = false;
         int video_frames = 0;
 
         auto deadline = t0 + std::chrono::seconds(5);
         while (std::chrono::steady_clock::now() < deadline && !quit) {
             auto elapsed = std::chrono::steady_clock::now() - t0;
 
-            if (!video_started && elapsed > std::chrono::seconds(1)) {
+            if (!video_open && !video_done && elapsed > std::chrono::seconds(1)) {
                 std::cout << "  opening video gate" << std::endl;
                 cam.startVideo();
-                video_started = true;
+                video_open = true;
             }
-            if (video_started && elapsed < std::chrono::seconds(4)) {
+            if (video_open && elapsed < std::chrono::seconds(4)) {
                 cv::Mat vframe;
                 if (cam.getVideoFrame(vframe, 50)) {
                     ++video_frames;
-                    // On first video frame print resolution as a sanity check.
                     if (video_frames == 1)
                         std::cout << "  first video frame: "
                                   << vframe.cols << "x" << vframe.rows << std::endl;
                 }
             }
-            if (video_started && elapsed >= std::chrono::seconds(4)) {
+            if (video_open && elapsed >= std::chrono::seconds(4)) {
                 cam.stopVideo();
-                video_started = false;
+                video_open = false;
+                video_done = true;
                 std::cout << "  video gate closed, got " << video_frames << " frames" << std::endl;
-                video_frames = -1; // sentinel so we don't print again
             }
 
             if (vf_new.exchange(false, std::memory_order_acq_rel)) {
@@ -86,7 +86,7 @@ int main()
             if (cv::waitKey(1) == 27)
                 quit = true;
         }
-        if (video_started)
+        if (video_open)
             cam.stopVideo();
 
         cam.stopViewfinder();
