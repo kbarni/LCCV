@@ -65,10 +65,27 @@ target_include_directories(liblccv
 set_target_properties(liblccv PROPERTIES PREFIX "" IMPORT_PREFIX "")
 target_link_libraries(liblccv pthread ${LIBCAMERA_LINK_LIBRARIES} ${OpenCV_LIBS})
 
-install(TARGETS liblccv 
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} 
+install(TARGETS liblccv
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(
     FILES ${HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
+
+# --- Examples ---
+option(BUILD_EXAMPLES "Build example programs" ON)
+if(BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
+# --- Debian package (cpack / cmake --build . --target package) ---
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_NAME "liblccv-dev")
+set(CPACK_PACKAGE_VERSION "0.3.0")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "LCCV — libcamera/OpenCV camera wrapper library")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Barna Keresztes <numag-ia@agro-bordeaux.fr>")
+set(CPACK_DEBIAN_PACKAGE_SECTION "libs")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcamera (>= 0.7), libopencv-dev")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+include(CPack)
