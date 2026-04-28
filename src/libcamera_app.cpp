@@ -186,40 +186,56 @@ void LibcameraApp::ConfigureVideoWithViewfinder()
     if (options_->verbose)
         std::cerr << "Configuring video + viewfinder..." << std::endl;
 
-    // Request both roles. Some pipeline handlers (e.g. UVC) only honour one
-    // stream regardless; we detect that after generateConfiguration() and fall
-    // back to video-only, leaving streams_["viewfinder"] unset.
+    // Try two roles. UVC and other single-stream pipeline handlers return null
+    // here; we detect that and fall back to a single Viewfinder stream that
+    // will serve as both the video source and the viewfinder callback source.
     StreamRoles roles = { StreamRole::VideoRecording, StreamRole::Viewfinder };
     configuration_ = camera_->generateConfiguration(roles);
-    if (!configuration_)
-        throw std::runtime_error("failed to generate video+viewfinder configuration");
 
-    // Stream 0: video at user-requested resolution.
-    configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
-    configuration_->at(0).size.width  = options_->video_width;
-    configuration_->at(0).size.height = options_->video_height;
-    configuration_->at(0).bufferCount = 4;
+    const bool dual_stream = configuration_ && configuration_->size() >= 2;
 
-    const bool has_vf_stream = configuration_->size() > 1;
-    if (has_vf_stream) {
+    if (dual_stream) {
+        // Stream 0: video, stream 1: viewfinder preview.
+        configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
+        configuration_->at(0).size.width  = options_->video_width;
+        configuration_->at(0).size.height = options_->video_height;
+        configuration_->at(0).bufferCount = 4;
+
         configuration_->at(1).pixelFormat = libcamera::formats::RGB888;
         configuration_->at(1).size.width  = options_->viewfinder_width;
         configuration_->at(1).size.height = options_->viewfinder_height;
         configuration_->at(1).bufferCount = 4;
-    }
 
-    configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
-    setupCapture();
+        configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
+        setupCapture();
 
-    streams_["video"] = configuration_->at(0).stream();
-    if (has_vf_stream)
+        streams_["video"]      = configuration_->at(0).stream();
         streams_["viewfinder"] = configuration_->at(1).stream();
 
-    if (options_->verbose) {
-        std::cerr << "Video + viewfinder setup complete";
-        if (!has_vf_stream)
-            std::cerr << " (device supports one stream; viewfinder shares video stream)";
-        std::cerr << std::endl;
+        if (options_->verbose)
+            std::cerr << "Video + viewfinder setup complete (dual stream)" << std::endl;
+    } else {
+        // Single-stream fallback: one Viewfinder stream serves both roles.
+        // streams_["viewfinder"] is left unset so Camera::vfstream stays null,
+        // and viewfinderThreadFunc() falls back to the video stream for the callback.
+        configuration_.reset();
+        configuration_ = camera_->generateConfiguration({ StreamRole::Viewfinder });
+        if (!configuration_)
+            throw std::runtime_error("failed to generate viewfinder configuration");
+
+        configuration_->at(0).pixelFormat = libcamera::formats::RGB888;
+        configuration_->at(0).size.width  = options_->video_width;
+        configuration_->at(0).size.height = options_->video_height;
+        configuration_->at(0).bufferCount = 4;
+
+        configureDenoise(options_->denoise == "auto" ? "cdn_off" : options_->denoise);
+        setupCapture();
+
+        streams_["video"] = configuration_->at(0).stream();
+
+        if (options_->verbose)
+            std::cerr << "Video + viewfinder setup complete "
+                         "(single-stream device; viewfinder shares video stream)" << std::endl;
     }
 }
 

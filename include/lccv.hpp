@@ -117,8 +117,10 @@ public:
     // callback short and non-blocking; do not call GUI toolkits from it
     // unless you know they are thread-safe on your platform.
     //
-    // In this step viewfinder mode is mutually exclusive with photo and
-    // video modes: starting photo/video will stop the viewfinder first.
+    // capturePhoto() can be called while the viewfinder is running; the
+    // library pauses the viewfinder, captures at full resolution, then
+    // restores the viewfinder automatically. startPhoto() is incompatible
+    // with viewfinder mode and will stop it.
     void addViewfinder(ViewfinderCallback cb);
     bool startViewfinder();
     void stopViewfinder();

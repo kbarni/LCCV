@@ -208,18 +208,40 @@ bool Camera::stopPhoto()
 
 bool Camera::capturePhoto(cv::Mat &frame)
 {
-    // In "started" mode (startPhoto was called) the camera is already
-    // streaming and must stay that way across calls; we only Wait for the
-    // next frame. In standalone mode we do the full open/configure/start —
-    // wait — stop/teardown/close cycle for this single shot.
-    const bool standalone = !camerastarted;
-    if (standalone && vf_running.load(std::memory_order_acquire))
-        stopViewfinder();
-    if(standalone){
+    // Three cases:
+    //   A) viewfinder running — pause pipeline, capture, restore.
+    //   B) standalone (no startPhoto) — full open/configure/start/stop cycle.
+    //   C) startPhoto mode — camera already streaming; just Wait.
+    const bool restore_vf    = vf_running.load(std::memory_order_acquire);
+    const bool restore_video = restore_vf && running.load(std::memory_order_acquire);
+    const bool standalone    = !camerastarted;
+
+    if (restore_vf) {
+        // Pause the viewfinder pipeline so we can reconfigure for StillCapture.
+        vf_running.store(false, std::memory_order_release);
+        running.store(false, std::memory_order_release);
+        frameready_cv.notify_all();
+        if (vfthread.joinable())
+            vfthread.join();
+        app->StopCamera();
+        app->Teardown();
+        app->CloseCamera();
+        frameready.store(false, std::memory_order_release);
+
+        try {
+            app->OpenCamera();
+            app->ConfigureStill(still_flags);
+            app->StartCamera();
+        } catch (const std::exception &e) {
+            std::cerr << "lccv: capturePhoto still configure failed: " << e.what() << std::endl;
+            return false;
+        }
+    } else if (standalone) {
         app->OpenCamera();
         app->ConfigureStill(still_flags);
         app->StartCamera();
     }
+
     LibcameraApp::Msg msg = app->Wait();
     bool ok = false;
     if (msg.type == LibcameraApp::MsgType::RequestComplete && app->StillStream())
@@ -229,13 +251,36 @@ bool Camera::capturePhoto(cv::Mat &frame)
     }
     else if (msg.type != LibcameraApp::MsgType::Quit)
     {
-        std::cerr<<"Incorrect stream received"<<std::endl;
+        std::cerr << "Incorrect stream received" << std::endl;
     }
-    if(standalone){
+
+    if (restore_vf) {
+        app->StopCamera();
+        app->Teardown();
+        app->CloseCamera();
+        // Restore the viewfinder pipeline.
+        try {
+            app->OpenCamera();
+            app->ConfigureVideoWithViewfinder();
+            app->StartCamera();
+        } catch (const std::exception &e) {
+            std::cerr << "lccv: capturePhoto viewfinder restore failed: " << e.what() << std::endl;
+            return ok;
+        }
+        vstream  = app->VideoStream(&vw, &vh, &vstr);
+        vfstream = app->ViewfinderStream(&vfw, &vfh, &vfstr);
+        if (restore_video) {
+            frameready.store(false, std::memory_order_release);
+            running.store(true, std::memory_order_release);
+        }
+        vf_running.store(true, std::memory_order_release);
+        vfthread = std::thread(&Camera::viewfinderThreadFunc, this);
+    } else if (standalone) {
         app->StopCamera();
         app->Teardown();
         app->CloseCamera();
     }
+
     return ok;
 }
 

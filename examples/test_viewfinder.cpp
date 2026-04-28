@@ -1,5 +1,7 @@
 // Interactive viewfinder + photo + video test for lccv::Camera.
-// Each cycle: shows a live viewfinder for 5 s, then captures a full-res photo.
+// Each cycle: shows a live viewfinder for 5 s, captures a full-res photo
+// *while the viewfinder is still running* (Step 4 pause/restore), then
+// shows the resumed viewfinder for 2 s before stopping it.
 // During seconds 2-4 of the viewfinder phase the video gate is opened so that
 // getVideoFrame() also works in parallel with the viewfinder callback.
 // Repeats 6 times. Press ESC at any time to quit early.
@@ -36,6 +38,16 @@ int main()
         vf_new.store(true, std::memory_order_release);
     });
 
+    auto show_viewfinder = [&](bool &quit) {
+        if (vf_new.exchange(false, std::memory_order_acq_rel)) {
+            std::lock_guard<std::mutex> lk(vf_mutex);
+            if (!vf_display.empty())
+                cv::imshow("Viewfinder", vf_display);
+        }
+        if (cv::waitKey(1) == 27)
+            quit = true;
+    };
+
     bool quit = false;
     for (int i = 0; i < 6 && !quit; ++i) {
         std::cout << "Cycle " << (i + 1) << "/6: starting viewfinder" << std::endl;
@@ -45,16 +57,13 @@ int main()
             return 1;
         }
 
-        // Open the video gate after ~1 s, close it after ~4 s.
-        // This exercises startVideo/stopVideo as software gates while the
-        // viewfinder callback continues uninterrupted throughout.
+        // Phase 1: 5 s of viewfinder with a video-gate open/close sub-test.
         auto t0 = std::chrono::steady_clock::now();
         bool video_open = false;
         bool video_done = false;
-        int video_frames = 0;
+        int  video_frames = 0;
 
-        auto deadline = t0 + std::chrono::seconds(5);
-        while (std::chrono::steady_clock::now() < deadline && !quit) {
+        while (std::chrono::steady_clock::now() < t0 + std::chrono::seconds(5) && !quit) {
             auto elapsed = std::chrono::steady_clock::now() - t0;
 
             if (!video_open && !video_done && elapsed > std::chrono::seconds(1)) {
@@ -78,21 +87,16 @@ int main()
                 std::cout << "  video gate closed, got " << video_frames << " frames" << std::endl;
             }
 
-            if (vf_new.exchange(false, std::memory_order_acq_rel)) {
-                std::lock_guard<std::mutex> lk(vf_mutex);
-                if (!vf_display.empty())
-                    cv::imshow("Viewfinder", vf_display);
-            }
-            if (cv::waitKey(1) == 27)
-                quit = true;
+            show_viewfinder(quit);
         }
         if (video_open)
             cam.stopVideo();
-
-        cam.stopViewfinder();
         if (quit) break;
 
-        std::cout << "Cycle " << (i + 1) << "/6: capturing photo" << std::endl;
+        // Phase 2: capture photo while viewfinder is still running.
+        // The library pauses the viewfinder, reconfigures for StillCapture,
+        // captures, then restores the viewfinder automatically.
+        std::cout << "Cycle " << (i + 1) << "/6: capturing photo (viewfinder paused then restored)" << std::endl;
         cv::Mat photo;
         if (cam.capturePhoto(photo)) {
             std::cout << "Photo " << (i + 1) << ": "
@@ -102,6 +106,13 @@ int main()
         } else {
             std::cerr << "capturePhoto failed" << std::endl;
         }
+
+        // Phase 3: show viewfinder for 2 s to confirm it resumed.
+        auto t1 = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() < t1 + std::chrono::seconds(2) && !quit)
+            show_viewfinder(quit);
+
+        cam.stopViewfinder();
     }
 
     // Keep the last photo visible for a moment before closing.
