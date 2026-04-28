@@ -270,6 +270,12 @@ void LibcameraApp::StartCamera()
 
 	// Build a list of initial controls that we must set in the camera before starting it.
 	// We don't overwrite anything the application may have set before calling us.
+	// Guard every set() with a capability check: unsupported controls (e.g. on USB webcams)
+	// are skipped silently rather than producing libcamera ERROR log entries.
+	auto has = [this](const libcamera::ControlId &id) {
+		return camera_->controls().count(&id) > 0;
+	};
+
 	if (!controls_.get(controls::ScalerCrop) && options_->zoom > 1.0f)
 	{
 		ApplyZoom(options_->zoom, options_->pan_x, options_->pan_y);
@@ -289,27 +295,27 @@ void LibcameraApp::StartCamera()
 		}
 	}
 
-	if (!controls_.get(controls::ExposureTime) && options_->shutter)
+	if (!controls_.get(controls::ExposureTime) && options_->shutter && has(controls::ExposureTime))
 		controls_.set(controls::ExposureTime, options_->shutter);
-	if (!controls_.get(controls::AnalogueGain) && options_->gain)
+	if (!controls_.get(controls::AnalogueGain) && options_->gain && has(controls::AnalogueGain))
 		controls_.set(controls::AnalogueGain, options_->gain);
-	if (!controls_.get(controls::AeMeteringMode))
+	if (!controls_.get(controls::AeMeteringMode) && has(controls::AeMeteringMode))
 		controls_.set(controls::AeMeteringMode, options_->getMeteringIndex());
-	if (!controls_.get(controls::AeExposureMode))
+	if (!controls_.get(controls::AeExposureMode) && has(controls::AeExposureMode))
 		controls_.set(controls::AeExposureMode, options_->getExposureIndex());
-	if (!controls_.get(controls::ExposureValue))
+	if (!controls_.get(controls::ExposureValue) && has(controls::ExposureValue))
 		controls_.set(controls::ExposureValue, options_->ev);
-	if (!controls_.get(controls::AwbMode))
+	if (!controls_.get(controls::AwbMode) && has(controls::AwbMode))
 		controls_.set(controls::AwbMode, options_->getWhiteBalanceIndex());
-	if (!controls_.get(controls::ColourGains) && options_->awb_gain_r && options_->awb_gain_b)
+	if (!controls_.get(controls::ColourGains) && options_->awb_gain_r && options_->awb_gain_b && has(controls::ColourGains))
 		controls_.set(controls::ColourGains, libcamera::Span<const float, 2>({ options_->awb_gain_r, options_->awb_gain_b }));
-	if (!controls_.get(controls::Brightness))
+	if (!controls_.get(controls::Brightness) && has(controls::Brightness))
 		controls_.set(controls::Brightness, options_->brightness);
-	if (!controls_.get(controls::Contrast))
+	if (!controls_.get(controls::Contrast) && has(controls::Contrast))
 		controls_.set(controls::Contrast, options_->contrast);
-	if (!controls_.get(controls::Saturation))
+	if (!controls_.get(controls::Saturation) && has(controls::Saturation))
 		controls_.set(controls::Saturation, options_->saturation);
-	if (!controls_.get(controls::Sharpness))
+	if (!controls_.get(controls::Sharpness) && has(controls::Sharpness))
 		controls_.set(controls::Sharpness, options_->sharpness);
 
 	if (camera_->start(&controls_))
@@ -407,6 +413,9 @@ std::vector<LibcameraApp::Size> LibcameraApp::SupportedSizes(StreamRole role)
 
 void LibcameraApp::ApplyZoom(float zoom, float pan_x, float pan_y)
 {
+    if (!camera_->controls().count(&controls::ScalerCrop))
+        return;
+
     if (zoom < 1.0f) zoom = 1.0f;
     if (pan_x < 0.0f) pan_x = 0.0f; else if (pan_x > 1.0f) pan_x = 1.0f;
     if (pan_y < 0.0f) pan_y = 0.0f; else if (pan_y > 1.0f) pan_y = 1.0f;
