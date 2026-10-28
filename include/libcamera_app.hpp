@@ -127,6 +127,26 @@ public:
 	std::vector<std::span<uint8_t>> Mmap(FrameBuffer *buffer) const;
 
 	void SetControls(ControlList &controls);
+	// Queue a single control for the next request, keeping other pending controls.
+	template <typename T, typename V>
+	void SetControl(const libcamera::Control<T> &ctrl, const V &value)
+	{
+		std::lock_guard<std::mutex> lock(control_mutex_);
+		controls_.set(ctrl, value);
+	}
+	// True if the open camera supports this control. False when no camera is open.
+	bool HasControl(const libcamera::ControlId &id) const
+	{
+		return camera_ && camera_->controls().count(&id) > 0;
+	}
+	// Supported range of a control, or nullptr if unsupported / no camera open.
+	const libcamera::ControlInfo *GetControlInfo(const libcamera::ControlId &id) const
+	{
+		if (!camera_)
+			return nullptr;
+		auto it = camera_->controls().find(&id);
+		return it == camera_->controls().end() ? nullptr : &it->second;
+	}
 	void StreamDimensions(Stream const *stream, unsigned int *w, unsigned int *h, unsigned int *stride) const;
 
 protected:

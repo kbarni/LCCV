@@ -1,5 +1,8 @@
 #include "lccv.hpp"
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <time.h>
@@ -27,9 +30,14 @@ Options::Options()
       framerate(0.0f),
       denoise("auto"),
       camera(0),
+      lens_position(1.0f),
+      af_timeout_ms(2000),
       metering_index(static_cast<int>(Metering::CENTRE)),
       exposure_index(static_cast<int>(Exposure::NORMAL)),
-      awb_index(static_cast<int>(WhiteBalance::AUTO))
+      awb_index(static_cast<int>(WhiteBalance::AUTO)),
+      af_mode_index(static_cast<int>(AutoFocus::CONTINUOUS)),
+      af_range_index(static_cast<int>(FocusRange::NORMAL)),
+      af_speed_index(static_cast<int>(FocusSpeed::NORMAL))
 {
 }
 
@@ -58,6 +66,11 @@ void Options::print() const
     std::cerr << "    sharpness: " << sharpness << std::endl;
     std::cerr << "    framerate: " << framerate << std::endl;
     std::cerr << "    denoise: " << denoise << std::endl;
+    std::cerr << "    autofocus: " << af_mode_index << "  range: " << af_range_index
+              << "  speed: " << af_speed_index << std::endl;
+    if (getAutoFocus() == AutoFocus::MANUAL)
+        std::cerr << "    lens position: " << lens_position << std::endl;
+    std::cerr << "    af timeout: " << af_timeout_ms << " ms" << std::endl;
 }
 
 namespace {
@@ -242,17 +255,14 @@ bool Camera::capturePhoto(cv::Mat &frame)
         app->StartCamera();
     }
 
-    LibcameraApp::Msg msg = app->Wait();
     bool ok = false;
-    if (msg.type == LibcameraApp::MsgType::RequestComplete && app->StillStream())
+    CompletedRequestPtr req = waitForFocusedFrame();
+    if (req && app->StillStream())
     {
-        getImage(frame, std::get<CompletedRequestPtr>(msg.payload));
+        getImage(frame, req);
         ok = true;
     }
-    else if (msg.type != LibcameraApp::MsgType::Quit)
-    {
-        std::cerr << "Incorrect stream received" << std::endl;
-    }
+    req.reset(); // hand the buffer back before tearing down / continuing
 
     if (restore_vf) {
         app->StopCamera();
@@ -282,6 +292,90 @@ bool Camera::capturePhoto(cv::Mat &frame)
     }
 
     return ok;
+}
+
+// Pull still frames until the lens has settled, then return that frame.
+// Frames that are not used are dropped right away so their buffer is
+// re-queued: the still stream may have only one buffer.
+//   MANUAL:     wait until the reported lens position reaches the request.
+//   AUTO:       trigger a scan, wait for it to start and then finish.
+//   CONTINUOUS: wait for AfState == Focused.
+// Gives up after options->af_timeout_ms and returns the current frame.
+// Returns nullptr if the camera sent something other than a frame.
+CompletedRequestPtr Camera::waitForFocusedFrame()
+{
+    namespace ctl = libcamera::controls;
+    const bool has_af = app->HasControl(ctl::AfMode) && options->af_timeout_ms > 0;
+    const AutoFocus mode = options->getAutoFocus();
+
+    float target_pos = options->lens_position;
+    if (has_af && mode == AutoFocus::MANUAL) {
+        if (const auto *info = app->GetControlInfo(ctl::LensPosition))
+            target_pos = std::clamp(target_pos, info->min().get<float>(), info->max().get<float>());
+    }
+    if (has_af && mode == AutoFocus::AUTO)
+        app->SetControl(ctl::AfTrigger, ctl::AfTriggerStart);
+
+    const auto deadline = std::chrono::steady_clock::now()
+                        + std::chrono::milliseconds(options->af_timeout_ms);
+    bool scan_started = false;
+
+    for (;;) {
+        LibcameraApp::Msg msg = app->Wait();
+        if (msg.type != LibcameraApp::MsgType::RequestComplete) {
+            if (msg.type != LibcameraApp::MsgType::Quit)
+                std::cerr << "lccv: unexpected message while waiting for a still frame" << std::endl;
+            return nullptr;
+        }
+        CompletedRequestPtr req = std::get<CompletedRequestPtr>(msg.payload);
+        if (!has_af)
+            return req;
+
+        const auto state = req->metadata.get(ctl::AfState);
+        bool settled = false;
+        switch (mode) {
+        case AutoFocus::MANUAL: {
+            const auto pos = req->metadata.get(ctl::LensPosition);
+            settled = !pos || std::fabs(*pos - target_pos) < 0.05f;
+            break;
+        }
+        case AutoFocus::AUTO:
+            if (!state)
+                settled = true;
+            else if (*state == ctl::AfStateScanning)
+                scan_started = true;
+            else if (scan_started &&
+                     (*state == ctl::AfStateFocused || *state == ctl::AfStateFailed))
+                settled = true;
+            break;
+        case AutoFocus::CONTINUOUS:
+            settled = !state || *state == ctl::AfStateFocused;
+            break;
+        }
+
+        if (settled) {
+            if (options->verbose && state && *state == ctl::AfStateFailed)
+                std::cerr << "lccv: autofocus failed, capturing anyway" << std::endl;
+            return req;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            if (options->verbose)
+                std::cerr << "lccv: autofocus timeout, capturing anyway" << std::endl;
+            return req;
+        }
+        // req is released here, re-queueing its buffer for the next frame.
+    }
+}
+
+bool Camera::triggerAutofocus()
+{
+    const bool active = camerastarted
+                     || running.load(std::memory_order_acquire)
+                     || vf_running.load(std::memory_order_acquire);
+    if (!active || !app->HasControl(libcamera::controls::AfTrigger))
+        return false;
+    app->SetControl(libcamera::controls::AfTrigger, libcamera::controls::AfTriggerStart);
+    return true;
 }
 
 bool Camera::startVideo()

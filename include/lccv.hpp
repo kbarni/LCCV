@@ -50,6 +50,25 @@ enum class WhiteBalance {
     CUSTOM       = libcamera::controls::AwbCustom
 };
 
+// Autofocus controls. They only have an effect on cameras with a motorised
+// lens (e.g. Raspberry Pi Camera Module 3); fixed-focus cameras ignore them.
+enum class AutoFocus {
+    MANUAL     = libcamera::controls::AfModeManual,     // lens stays at Options::lens_position
+    AUTO       = libcamera::controls::AfModeAuto,       // one scan per capturePhoto() / triggerAutofocus()
+    CONTINUOUS = libcamera::controls::AfModeContinuous  // camera keeps refocusing on its own
+};
+
+enum class FocusRange {
+    NORMAL = libcamera::controls::AfRangeNormal,
+    MACRO  = libcamera::controls::AfRangeMacro,
+    FULL   = libcamera::controls::AfRangeFull
+};
+
+enum class FocusSpeed {
+    NORMAL = libcamera::controls::AfSpeedNormal,
+    FAST   = libcamera::controls::AfSpeedFast
+};
+
 class Options {
 public:
     Options();
@@ -58,14 +77,23 @@ public:
     void setMetering(Metering m)     { metering_index = static_cast<int>(m); }
     void setExposureMode(Exposure e) { exposure_index = static_cast<int>(e); }
     void setWhiteBalance(WhiteBalance wb) { awb_index = static_cast<int>(wb); }
+    void setAutoFocus(AutoFocus af)  { af_mode_index = static_cast<int>(af); }
+    void setFocusRange(FocusRange r) { af_range_index = static_cast<int>(r); }
+    void setFocusSpeed(FocusSpeed s) { af_speed_index = static_cast<int>(s); }
 
     Metering     getMetering()     const { return static_cast<Metering>(metering_index); }
     Exposure     getExposureMode() const { return static_cast<Exposure>(exposure_index); }
     WhiteBalance getWhiteBalance() const { return static_cast<WhiteBalance>(awb_index); }
+    AutoFocus    getAutoFocus()    const { return static_cast<AutoFocus>(af_mode_index); }
+    FocusRange   getFocusRange()   const { return static_cast<FocusRange>(af_range_index); }
+    FocusSpeed   getFocusSpeed()   const { return static_cast<FocusSpeed>(af_speed_index); }
 
     int getMeteringIndex()    const { return metering_index; }
     int getExposureIndex()    const { return exposure_index; }
     int getWhiteBalanceIndex() const { return awb_index; }
+    int getAutoFocusIndex()   const { return af_mode_index; }
+    int getFocusRangeIndex()  const { return af_range_index; }
+    int getFocusSpeedIndex()  const { return af_speed_index; }
 
     bool verbose;
     unsigned int photo_width, photo_height;
@@ -87,11 +115,20 @@ public:
     float framerate;
     std::string denoise;
     unsigned int camera;
+    // Lens position in dioptres (1 / distance in metres; 0 = infinity).
+    // Used only in AutoFocus::MANUAL.
+    float lens_position;
+    // Longest time capturePhoto() waits for the lens to settle before taking
+    // the frame anyway. 0 disables the wait.
+    unsigned int af_timeout_ms;
 
 private:
     int metering_index;
     int exposure_index;
     int awb_index;
+    int af_mode_index;
+    int af_range_index;
+    int af_speed_index;
 };
 
 using ViewfinderCallback = std::function<void(cv::Mat &)>;
@@ -127,6 +164,12 @@ public:
 
     void ApplyZoomOptions();
 
+    // Start one autofocus scan on the running camera (photo, video or
+    // viewfinder mode). Meant for AutoFocus::AUTO; capturePhoto() already
+    // triggers a scan by itself in that mode. Returns false if the camera is
+    // not running or has no autofocus.
+    bool triggerAutofocus();
+
     // Enumerate supported photo/video resolutions for the currently selected
     // camera. Opens and closes the camera internally if it is not already
     // open; do not call these while photo or video mode is active.
@@ -136,6 +179,7 @@ public:
 protected:
     std::unique_ptr<LibcameraApp> app;
     void getImage(cv::Mat &frame, CompletedRequestPtr &payload);
+    CompletedRequestPtr waitForFocusedFrame();
     void videoThreadFunc();
     void viewfinderThreadFunc();
     std::thread videothread;

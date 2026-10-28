@@ -325,6 +325,22 @@ void LibcameraApp::StartCamera()
 	if (!controls_.get(controls::Sharpness) && has(controls::Sharpness))
 		controls_.set(controls::Sharpness, options_->sharpness);
 
+	// Autofocus (e.g. Camera Module 3). Skipped on fixed-focus cameras. Without
+	// AfMode the Raspberry Pi IPA stays in manual mode with the lens parked.
+	if (has(controls::AfMode))
+	{
+		const int af_mode = options_->getAutoFocusIndex();
+		if (!controls_.get(controls::AfMode))
+			controls_.set(controls::AfMode, af_mode);
+		if (!controls_.get(controls::AfRange) && has(controls::AfRange))
+			controls_.set(controls::AfRange, options_->getFocusRangeIndex());
+		if (!controls_.get(controls::AfSpeed) && has(controls::AfSpeed))
+			controls_.set(controls::AfSpeed, options_->getFocusSpeedIndex());
+		if (af_mode == controls::AfModeManual && !controls_.get(controls::LensPosition) &&
+			has(controls::LensPosition))
+			controls_.set(controls::LensPosition, options_->lens_position);
+	}
+
 	if (camera_->start(&controls_))
 		throw std::runtime_error("failed to start camera");
 	controls_.clear();
