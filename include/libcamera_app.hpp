@@ -22,7 +22,8 @@
 #include <map>
 #include <iomanip>
 
-#include <libcamera/base/span.h>
+#include <span>
+#include <array>
 #include <libcamera/camera.h>
 #include <libcamera/camera_manager.h>
 #include <libcamera/control_ids.h>
@@ -123,7 +124,7 @@ public:
 	Stream *LoresStream(unsigned int *w = nullptr, unsigned int *h = nullptr, unsigned int *stride = nullptr) const;
 	Stream *GetMainStream() const;
 
-	std::vector<libcamera::Span<uint8_t>> Mmap(FrameBuffer *buffer) const;
+	std::vector<std::span<uint8_t>> Mmap(FrameBuffer *buffer) const;
 
 	void SetControls(ControlList &controls);
 	void StreamDimensions(Stream const *stream, unsigned int *w, unsigned int *h, unsigned int *stride) const;
@@ -173,7 +174,7 @@ private:
 	std::shared_ptr<Camera> camera_;
 	bool camera_acquired_ = false;
 	std::unique_ptr<CameraConfiguration> configuration_;
-	std::map<FrameBuffer *, std::vector<libcamera::Span<uint8_t>>> mapped_buffers_;
+	std::map<FrameBuffer *, std::vector<std::span<uint8_t>>> mapped_buffers_;
 	std::map<std::string, Stream *> streams_;
 	std::unique_ptr<FrameBufferAllocator> allocator_;
 	std::map<Stream *, std::queue<FrameBuffer *>> frame_buffers_;

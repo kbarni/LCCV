@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 project(lccv_examples)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 # Build the in-tree library as a subproject so changes to lccv pick up here
 # without a `sudo make install` round-trip. liblccv propagates its include

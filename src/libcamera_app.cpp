@@ -287,11 +287,15 @@ void LibcameraApp::StartCamera()
 	if (!controls_.get(controls::FrameDurationLimits))
 	{
 		if (StillStream())
-			controls_.set(controls::FrameDurationLimits, libcamera::Span<const int64_t, 2>({ INT64_C(100), INT64_C(1000000000) }));
+			{
+			const std::array<int64_t, 2> limits{ INT64_C(100), INT64_C(1000000000) };
+			controls_.set(controls::FrameDurationLimits, std::span<const int64_t, 2>(limits));
+		}
 		else if (options_->framerate > 0)
 		{
 			int64_t frame_time = 1000000 / options_->framerate; // in us
-			controls_.set(controls::FrameDurationLimits, libcamera::Span<const int64_t, 2>({ frame_time, frame_time }));
+			const std::array<int64_t, 2> limits{ frame_time, frame_time };
+			controls_.set(controls::FrameDurationLimits, std::span<const int64_t, 2>(limits));
 		}
 	}
 
@@ -308,7 +312,10 @@ void LibcameraApp::StartCamera()
 	if (!controls_.get(controls::AwbMode) && has(controls::AwbMode))
 		controls_.set(controls::AwbMode, options_->getWhiteBalanceIndex());
 	if (!controls_.get(controls::ColourGains) && options_->awb_gain_r && options_->awb_gain_b && has(controls::ColourGains))
-		controls_.set(controls::ColourGains, libcamera::Span<const float, 2>({ options_->awb_gain_r, options_->awb_gain_b }));
+		{
+		const std::array<float, 2> gains{ options_->awb_gain_r, options_->awb_gain_b };
+		controls_.set(controls::ColourGains, std::span<const float, 2>(gains));
+	}
 	if (!controls_.get(controls::Brightness) && has(controls::Brightness))
 		controls_.set(controls::Brightness, options_->brightness);
 	if (!controls_.get(controls::Contrast) && has(controls::Contrast))
@@ -531,7 +538,7 @@ libcamera::Stream *LibcameraApp::GetMainStream() const
 	return nullptr;
 }
 
-std::vector<libcamera::Span<uint8_t>> LibcameraApp::Mmap(FrameBuffer *buffer) const
+std::vector<std::span<uint8_t>> LibcameraApp::Mmap(FrameBuffer *buffer) const
 {
 	auto item = mapped_buffers_.find(buffer);
 	if (item == mapped_buffers_.end())
@@ -594,7 +601,7 @@ void LibcameraApp::setupCapture()
 				{
 					void *memory = mmap(NULL, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, plane.fd.get(), 0);
 					mapped_buffers_[buffer.get()].push_back(
-						libcamera::Span<uint8_t>(static_cast<uint8_t *>(memory), buffer_size));
+						std::span<uint8_t>(static_cast<uint8_t *>(memory), buffer_size));
 					buffer_size = 0;
 				}
 			}
