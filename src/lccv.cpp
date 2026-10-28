@@ -138,11 +138,14 @@ void applyOutputFormat(cv::Mat &frame, PixelFormat fmt)
 
 } // namespace
 
-Camera::Camera()
+Camera::Camera() : Camera(0) {}
+
+Camera::Camera(uint32_t id)
 {
     app = std::make_unique<LibcameraApp>(std::make_unique<Options>());
     options = app->GetOptions();
     still_flags = LibcameraApp::FLAG_STILL_NONE;
+    options->camera = id;
     options->photo_width = 4056;
     options->photo_height = 3040;
     options->video_width = 640;

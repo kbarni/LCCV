@@ -136,6 +136,8 @@ using ViewfinderCallback = std::function<void(cv::Mat &)>;
 class Camera {
 public:
     Camera();
+    // Select a camera by index (0 .. LibcameraApp::GetNumberCameras() - 1).
+    explicit Camera(uint32_t id);
     ~Camera();
 
     Options *options;
